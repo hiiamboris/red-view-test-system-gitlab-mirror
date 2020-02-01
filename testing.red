@@ -13,7 +13,7 @@ Red [
 
 load-issues: does [clear issues: #() do %issues.red]	;@@ move this into %issues.red?
 
-reload: does [do %testmap.red]
+reload: does [do %testing.red]
 
 unless value? 'main-worker [jobs/init]
 
@@ -135,7 +135,7 @@ toolset: context [
 		; /async	"Return immediately (otherwise blocks)"
 	][
 	 	if return [code: compose/only [print mold/flat do (code)]]	 ;@@ mold/all leads to unloadable #[handle! ...] - avoid it
-		task: jobs/send-to main-worker code
+		task: jobs/send-main code
 		output: clock [jobs/wait-for-task/max task 3]
 		;@@ for debugging only:
 		either output [

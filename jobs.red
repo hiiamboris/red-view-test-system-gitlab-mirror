@@ -240,8 +240,9 @@ jobs: context [
 
 	;@@ TODO: dump all stuff ever sent to each worker somewhere; rather than creating 1-line files
 	send-to: function [worker [object!] command [block!] /wait] [
-		also send-to* worker worker/last-code: mold/only/all/flat command			;@@ BUG: /all may become unloadable - use it or not?
-			if wait [wait-for worker]
+		task: send-to* worker worker/last-code: mold/only/all/flat command			;@@ BUG: /all may become unloadable - use it or not?
+		if wait [wait-for-task task]
+		task
 		;@@ TODO: wait until worker signals it's running this task?
 	]
 
@@ -329,21 +330,25 @@ jobs: context [
 	;; returns none if performing no task
 	;; returns id (integer) if next task is not complete
 	;; returns output (string) if next is complete
-	read-task-report: function [worker [object!] /local id code timestamp output] [
+	read-task-report: function [worker [object!] /local id code timestamp output out-of-order] [
 		bin: read/binary/seek worker/stdout ofs: worker/stdout-offset
 
 		=busy-line=: ["=== BUSY: " copy id to #" " " "   copy code to lf lf]
 		=idle-line=: ["=== IDLE: " copy id to #" " " @ " copy timestamp to lf lf]
 		unless parse bin [
+			copy out-of-order to "=== BUSY:"
 			=busy-line=
 			copy output to "=== IDLE:"
 			=idle-line=
 			size:
 		][return attempt [to integer! to string! id]]
 
-		foreach w [code timestamp id output] [set w to string! get w]
+		foreach w [code timestamp id output out-of-order] [set w to string! get w]
 		unless worker/last-code = code: trim/lines code [
 			panic #composite {*** INTERNAL ERROR: Code/Last-code mismatch: code="(code)" last-code="(worker/last-code)"}
+		]
+		unless empty? out-of-order [		;@@ should I save it to the worker?
+			panic #composite "*** Out-of-order worker output encountered:^/(out-of-order)"
 		]
 		worker/stdout-offset: ofs + offset? bin size
 		worker/timestamp: trim/lines timestamp

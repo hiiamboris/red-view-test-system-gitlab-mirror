@@ -75,6 +75,131 @@ trace: func [
 ]
 
 
+;; this is handy for producing a step-by-step expression reduction log
+;; [100 / add 1 subtract 4 2] should produce:
+;;  subtract 4 2
+;;  add 1 :.
+;;  100 / :.
+;; then `trace` the result and log the outputs
+trace-deep: function [
+	"Deeply trace a set of expressions"			;@@ TODO: remove `quote` once apply is available
+	inspect	[function!] "func [expr [block!] result [any-type!]]"
+	code	[block!]	"If empty, still evaluated once"
+][
+	code: copy/deep code		;-- will be modified in place
+	eval-types: reduce [		;-- value types that should be traced
+		paren!		;-- recurse into it
+		; block!	-- never known if it's data or code argument - can't recurse into it
+		set-word!	;-- ignore it, as it's previous value is not used; also preprocessor returns it as a single expression
+		set-path!	;-- ditto
+		word!		;-- function call or value acquisition - we wanna know the value
+		path!		;-- ditto
+		get-word!	;-- value acquisition - wanna know it
+		get-path!	;-- ditto
+		native!		;-- literal functions should be evaluated but no need to display their source
+		action!
+		routine!
+		op!
+		function!
+	]
+	;@@ BUG: double evaluation can happen if something returns a function - TODO: use quote
+
+	wrap: func [x [any-type!]] [
+		either any [			;-- quote evaluatable types
+			any-word? :x
+			any-path? :x
+			any-function? :x
+			paren? :x
+		][
+			as paren! reduce ['quote :x]
+		][
+			:x
+		]
+	]
+	rewrite: func [code] [
+		while [not empty? code] [
+			code: rewrite-next code
+		]
+		; inspect code tail code last code
+	]
+	rewrite-single: func [code] [
+		expr: copy/part code next code
+		set/any 'r do expr
+		inspect expr :r
+		change/only code wrap :r
+	]
+	rewrite-next: func [code /no-op /local start end v1 v2 r arity expr rewrite?] [
+		assert [not empty? code]
+		;; correct for the set-word / set-path bug - rewrite every set-expr with it's result
+		start: code
+		while [find [set-word! set-path!] type?/word :start/1] [start: next start]
+		end: preprocessor/fetch-next start
+
+		;; 2 or more values
+		v1: :start/1
+		v2: :start/2
+		rewrite?: yes
+		case [									;-- priority: op, any-func, everything else
+			all [									;-- operator - recurse into it's right part
+				word? :v2
+				op! = type? get/any :v2
+			][
+				if no-op [rewrite?: no]
+				if find eval-types type? :v1 [rewrite-single start]
+				rewrite-next/no-op skip start 2
+			]
+
+			all [									;-- a function call - recurse into it
+				any [word? :v1  path? :v1]
+				find [native! action! function! routine!] type?/word get/any :v1
+			][
+				arity: preprocessor/func-arity? spec-of get :v1
+				end: next start
+				loop arity [end: rewrite-next end]
+			]
+
+			paren? :v1 [rewrite as block! v1]		;-- recurse into paren
+
+			'else [									;-- other cases
+				if find eval-types type? :v1 [rewrite-single start]
+				rewrite?: any [
+					not same? end next start		;-- 2 or more values
+					not same? start code			;-- got set-words/set-paths
+				]
+			]
+		]
+		if rewrite? [
+			expr: copy/deep/part code end		;-- have to make a copy or it may be modified by `do`
+			set/any 'r do/next code 'end
+			inspect expr :r
+			change/part/only code wrap :r end
+		]
+		return next code
+	]
+	rewrite code
+	do code
+]
+
+; inspect: func [e [block!] r [any-type!]] [print [pad mold/flat/only e 30 "=>" mold :r]]
+; #assert [() = trace-deep :inspect []]
+; #assert [() = trace-deep :inspect [()]]
+; #assert [() = trace-deep :inspect [1 ()]]
+; #assert [3  = trace-deep :inspect [1 + 2]]
+; #assert [9  = trace-deep :inspect [1 + 2 * 3]]
+; #assert [4  = trace-deep :inspect [x: y: 2 x + y]]
+; #assert [20 = trace-deep :inspect [f: func [x] [does [10]] g: f 1 g * 2]]
+; #assert [20 = trace-deep :inspect [f: func [x] [does [10]] (g: f (1)) ((g) * 2)]]
+
+#assert [() = trace-deep func [x y [any-type!]][] []]
+#assert [() = trace-deep func [x y [any-type!]][] [()]]
+#assert [() = trace-deep func [x y [any-type!]][] [1 ()]]
+#assert [3  = trace-deep func [x y [any-type!]][] [1 + 2]]
+#assert [9  = trace-deep func [x y [any-type!]][] [1 + 2 * 3]]
+#assert [4  = trace-deep func [x y [any-type!]][] [x: y: 2 x + y]]
+#assert [20 = trace-deep func [x y [any-type!]][] [f: func [x] [does [10]] g: f 1 g * 2]]
+#assert [20 = trace-deep func [x y [any-type!]][] [f: func [x] [does [10]] x: f: :f (g: f (1)) ((g) * 2)]]
+
+
 ;@@ BUG: this diverts return & exit (but bind-only is too slow to use here)
 stepwise: function [
 	"Evaluate CODE by setting `.` word to the result of each expression"
@@ -140,6 +265,7 @@ clock-each: function [
 	]
 	clear times  clear marks							;-- to help the poor GC
 ]
+
 
 
 num-format: function [num [float! integer!] integral [integer!] frac [integer!] /no-zero-frac] [
@@ -211,9 +337,14 @@ eval-results-group: func [body [block!]] [
 				expr [block!]
 				/local r
 			][
-				set/any 'r do expr
+				red-log: copy "  Reduction log:"
+				inspect: func [exp [block!] val [any-type!]] [
+					repend red-log ["^/    " pad mold/flat/only exp 30 " => " mold :val]
+				]
+				set/any 'r trace-deep :inspect expr
+				; set/any 'r do expr
 				either any [unset? :r not :r]
-					[panic  #composite "(group): (mold expr) check failed with (:r)"]
+					[panic  #composite "(group): (mold expr) check failed with (:r)^/(red-log)"]
 					[inform #composite "(group): (mold expr) check succeeded"]
 				none
 			]
