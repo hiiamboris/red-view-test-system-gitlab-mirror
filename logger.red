@@ -28,7 +28,7 @@ log-review: does [
 	;; report errors if any
 	unless empty? reverse message-log [		;@@ TODO: when area becomes programmatically scrollable, get rid of reverse
 		view/options [
-			area wrap 500x500 with [text: form message-log]
+			area font-name "Lucida Console" wrap 700x500 with [text: form message-log]
 			return button "OK" focus [unview]
 		] [text: "(Reversed) error log"]
 	]
