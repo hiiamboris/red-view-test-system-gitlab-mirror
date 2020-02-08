@@ -15,10 +15,9 @@ context [
 	]
 
 	set 'borders-of function [
-		"Return window borders size: [left x top  right x bottom]"
+		"Return window borders thickness: [left x top  right x bottom]"
 		window [object!]
 	][
-		? window/state/1
 		#assert [any [handle? window/state/1 integer? window/state/1]]
 		get-window-borders window/state/1
 	]

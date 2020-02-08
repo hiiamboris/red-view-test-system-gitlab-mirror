@@ -17,9 +17,11 @@ image-data!: alias struct! [
 ]
 
 image-lock: func [imdt [image-data!]][
-	imdt/data: as byte-ptr! image/acquire-buffer imdt/img :imdt/bitmap
 	imdt/width:  OS-image/width?  imdt/img/node
 	imdt/height: OS-image/height? imdt/img/node
+	assert not zero? imdt/width
+	assert not zero? imdt/height
+	imdt/data: as byte-ptr! image/acquire-buffer imdt/img :imdt/bitmap
 ]
 
 image-release: func [imdt [image-data!]][

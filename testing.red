@@ -4,10 +4,12 @@ Red [
 	license: 'BSD-3
 ]
 
+recycle/off 
 #include %dope.red
 #include %jobs.red
 #include %input.red
 #include %visuals.red
+
 
 ; #where's-my-error?
 
@@ -35,13 +37,14 @@ toolset: context [
 			warn #composite "Redefinition of issue (mold title) detected"
 		]
 		words: collect [		;-- these words are automatically bound to `toolset` context
-			keep [offload sync pull should settle-down]	;-- common words
+			keep [offload sync pull push should settle-down expect-box]	;-- common words
 			if interactive [keep [display click drag shoot close-windows]]
 			if layout [keep [shoot close-windows]]
 		]
 		code: copy/deep test-code				;-- will be modified
 		bind-only code words
-		issues/:title: code
+		flags: object compose [interactive: (interactive) layout: (layout) compiled: (compiled)]
+		issues/:title: reduce [code flags]
 		;@@ TODO: each issue should live in it's own context - for /compile recursion to work
 	]
 
@@ -62,6 +65,7 @@ toolset: context [
 		/release "-r" /devmode "-c"
 		/debug "-d"
 		/header "Add header automatically"
+		/local flag opt
 	][
 		if all     [release devmode] [ERROR "/release and /devmode are mutually exclusive"]
 		unless any [release devmode] [ERROR "compilation mode (/release or /devmode) should be specified"]		;@@ TODO: or /devmode by default??
@@ -134,7 +138,7 @@ toolset: context [
 		; /heavy  "Use heavy worker (default: main worker)"
 		; /async	"Return immediately (otherwise blocks)"
 	][
-	 	if return [code: compose/only [print mold/flat do (code)]]	 ;@@ mold/all leads to unloadable #[handle! ...] - avoid it
+	 	if return [code: compose/only [print mold/all/flat do (code)]]	 ;@@ mold/all leads to unloadable #[handle! ...] - FIXED by commit
 		task: jobs/send-main code
 		output: clock [jobs/wait-for-task/max task 3]
 		;@@ for debugging only:
@@ -149,19 +153,30 @@ toolset: context [
 
 	;@@ TODO: keep all important stuff in contexts and context names - somewhere else? for sync not to override them
 
-	;@@ TODO: also `push`?
 	sync: pull: function [
 		"Sets local WORD to the value of this word held by main worker"
 		'word	[any-word!]
-		;@@ TODO: /with other-worker..
+		;@@ TODO: /with other-worker.. (or /from)
 	][
 		set word offload/return reduce [to word! word]	;@@ TODO: trap it
-		if quacks-like-face? face: get word [		;@@ HACK: also retrieve face's handle (as integer) for non-client size estimation!
-			face/state/1: offload/return compose [
-				second load next mold/all (as path! compose [(to word! word) state 1])
-			]
-		]
+		; if all [
+		; 	object? face: get word
+		; 	quacks-like-face? face
+		; ][								;@@ HACK: also retrieve face's handle (as integer) for non-client size estimation!
+		; 	face/state/1: offload/return compose [
+		; 		second load next mold/all (as path! compose [(to word! word) state 1])
+		; 	]
+		; ]
 		get word
+	]
+
+	push: function [
+		"Sets main worker's WORD it's local value"
+		'word	[any-word!]
+		;@@ TODO: /into other-worker..
+	][
+		#assert [not all [object? get word  quacks-like-face? get word]]		;-- no need to push faces, right?
+		offload reduce [to set-word! word 'quote get word]		;@@ TODO: trap it
 	]
 
 	;@@ TODO: upon exiting the interactive issue code - offload [unview/all]
@@ -169,11 +184,14 @@ toolset: context [
 	display: function [
 		"View LAYOUT in a main-worker thread; return the window object and sync all set-words"
 		layout [block!]
+		/tight
 		/local ret
 	][
 		=coll=: [any [keep set-word! | ahead [block! | paren!] into =coll= | skip]]
 		set-words: append parse layout [collect =coll=] [top-window:]	;-- need `top-window:` to sync it properly
-		offload compose/only [top-window: view/no-wait (layout)]		;-- return the main window
+		view-path: 'view/no-wait
+		if tight [append view-path 'tight]
+		offload compose/only [top-window: (view-path) (layout)]		;-- return the main window
 		foreach sw set-words [pull (sw)]				;@@ TODO: process ALL queued events before pulling?
 		foreach sw set-words [							;-- also update window objects for use in capture-face
 			all [
@@ -196,7 +214,7 @@ toolset: context [
 	][
 		unless word? layout [
 			close?: yes
-			display layout
+			top-window: display layout
 			layout: 'top-window
 		]
 		settle-down 1 sec
@@ -204,10 +222,9 @@ toolset: context [
 		;@@ img: offload/return compose [to-image (layout)]	-- doesn't work
 		;@@ workaround:
 		img: offload/return compose [to-image top-window]
-		if layout <> 'top-window [	;-- window might have or not have a border
-			face: get layout
-			img: capture-face/with face img
-		]
+		either layout = 'top-window
+			[ img: capture-window/with get layout img ]
+			[ img: capture-face/with get layout img ]
 
 		if close? [offload [unview]]
 		img
@@ -276,6 +293,7 @@ toolset: context [
 		target		[object! pair!] "Face object or a screen coordinate"
 		/mods mlist	[block!] "List of modifier keys"
 		/at point	[pair! block!] "Offset in the face or coordinate descriptor block"
+		/local mod
 	][
 		if mods [simulate-input-raw map-each/eval mod mlist [['+ mod]]]
 		if object? target [
@@ -286,22 +304,29 @@ toolset: context [
 		]
 		simulate-input-raw compose [(target) + lmb - lmb]
 		if mods [simulate-input-raw reverse map-each/eval mod mlist [[mod '-]]]
+		offload body-of :do-queued-events				;-- let worker process the input (else sync may return old values)
 	]
 
+	;@@ TODO: make issue set-words local; and also synced words local
+	;@@ TODO: inspect any values inside an issue post-failure
 	set 'test-issue function [
 		"Run the tests for a given issue"
 		title [string! issue! number!]
+		/local code flags
 	][
 		title: form-issue-title title
 		unless definition: issues/:title [
 			ERROR "Unable to find definition for issue (title)"
 		]
-		variants: expand-variants definition
+		set [code flags] definition
+		if flags/interactive [bgnd: display-background do-queued-events]
+		variants: expand-variants code
 		foreach [vnum vcode] variants [
-			eval-results-group vcode
+			eval-results-group/key vcode title
 		]
 		log-review
 		close-windows
+		if bgnd [unview/only bgnd]		;@@ TODO: display it once only?
 	]
 
 	form-issue-title: func [
@@ -322,15 +347,17 @@ toolset: context [
 		] 'no-border
 	]
 
+	; expect-box: func [spec [block!]] [expect [box spec]]
+
 ]
 ; halt
 
 load-issues
-issue/interactive "test" [
-	"abcdef"
-	variant 1 [x: 100]
-	variant 2 [x: 200]
-	1 + 1
-	click 1x1 * x
-]
+; issue/interactive "test" [
+; 	"abcdef"
+; 	variant 1 [x: 100]
+; 	variant 2 [x: 200]
+; 	1 + 1
+; 	click 1x1 * x
+; ]
 

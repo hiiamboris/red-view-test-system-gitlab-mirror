@@ -56,6 +56,16 @@ min+max: func [
 ]
 
 
+stack-friendly: func [
+	"Prefix a function defined in a context to make it visible in stack trace"
+	:w [set-word!]
+	v [default!]
+][
+	set in system/words to word! w does [ERROR "DO NOT CALL (to word! w) DIRECTLY"]
+	set w :v
+]
+
+
 ;@@ BUG: this diverts return & exit (but bind-only is too slow to use here)
 trace: func [
 	"Evaluate each expression in CODE and pass it's result to the INSPECT function"
@@ -120,13 +130,10 @@ trace-deep: function [
 		while [not empty? code] [
 			code: rewrite-next code
 		]
-		; inspect code tail code last code
 	]
-	rewrite-single: func [code] [
+	rewrite-single: func [code /local expr] [
 		expr: copy/part code next code
-		set/any 'r do expr
-		inspect expr :r
-		change/only code wrap :r
+		change/only code wrap inspect expr do expr
 	]
 	rewrite-next: func [code /no-op /local start end v1 v2 r arity expr rewrite?] [
 		assert [not empty? code]
@@ -150,10 +157,17 @@ trace-deep: function [
 			]
 
 			all [									;-- a function call - recurse into it
-				any [word? :v1  path? :v1]
-				find [native! action! function! routine!] type?/word get/any :v1
+				any [
+					word? :v1
+					all [path? :v1  v1: preprocessor/value-path? v1]
+				]
+				find [native! action! function! routine!] type?/word get/any v1
 			][
-				arity: preprocessor/func-arity? spec-of get :v1
+				arity: either path? v1: get v1 [
+					preprocessor/func-arity?/with spec-of :v1 start/1
+				][
+					preprocessor/func-arity? spec-of :v1
+				]
 				end: next start
 				loop arity [end: rewrite-next end]
 			]
@@ -170,8 +184,7 @@ trace-deep: function [
 		]
 		if rewrite? [
 			expr: copy/deep/part code end		;-- have to make a copy or it may be modified by `do`
-			set/any 'r do/next code 'end
-			inspect expr :r
+			set/any 'r inspect expr do/next code 'end
 			change/part/only code wrap :r end
 		]
 		return next code
@@ -180,7 +193,10 @@ trace-deep: function [
 	do code
 ]
 
-; inspect: func [e [block!] r [any-type!]] [print [pad mold/flat/only e 30 "=>" mold :r]]
+; inspect: func [e [block!] r [any-type!]] [print [pad mold :r 10 "<=" mold/flat/only e] :r]
+; x: y: 2 f: func [x] [x * 5]
+; probe trace-deep :inspect [x * x + f y]
+
 ; #assert [() = trace-deep :inspect []]
 ; #assert [() = trace-deep :inspect [()]]
 ; #assert [() = trace-deep :inspect [1 ()]]
@@ -190,14 +206,14 @@ trace-deep: function [
 ; #assert [20 = trace-deep :inspect [f: func [x] [does [10]] g: f 1 g * 2]]
 ; #assert [20 = trace-deep :inspect [f: func [x] [does [10]] (g: f (1)) ((g) * 2)]]
 
-#assert [() = trace-deep func [x y [any-type!]][] []]
-#assert [() = trace-deep func [x y [any-type!]][] [()]]
-#assert [() = trace-deep func [x y [any-type!]][] [1 ()]]
-#assert [3  = trace-deep func [x y [any-type!]][] [1 + 2]]
-#assert [9  = trace-deep func [x y [any-type!]][] [1 + 2 * 3]]
-#assert [4  = trace-deep func [x y [any-type!]][] [x: y: 2 x + y]]
-#assert [20 = trace-deep func [x y [any-type!]][] [f: func [x] [does [10]] g: f 1 g * 2]]
-#assert [20 = trace-deep func [x y [any-type!]][] [f: func [x] [does [10]] x: f: :f (g: f (1)) ((g) * 2)]]
+#assert [() = trace-deep func [x y [any-type!]][:y] []]
+#assert [() = trace-deep func [x y [any-type!]][:y] [()]]
+#assert [() = trace-deep func [x y [any-type!]][:y] [1 ()]]
+#assert [3  = trace-deep func [x y [any-type!]][:y] [1 + 2]]
+#assert [9  = trace-deep func [x y [any-type!]][:y] [1 + 2 * 3]]
+#assert [4  = trace-deep func [x y [any-type!]][:y] [x: y: 2 x + y]]
+#assert [20 = trace-deep func [x y [any-type!]][:y] [f: func [x] [does [10]] g: f 1 g * 2]]
+#assert [20 = trace-deep func [x y [any-type!]][:y] [f: func [x] [does [10]] x: f: :f (g: f (1)) ((g) * 2)]]
 
 
 ;@@ BUG: this diverts return & exit (but bind-only is too slow to use here)
@@ -213,6 +229,23 @@ stepwise: function [
 	]
 	setter: func [x [any-type!] _] bind [set/any '. :x] :f
 	f
+]
+
+
+timestamp: function [
+	"Get date & time in a sort-friendly YYYYMMDD-hhmmss-mmm format"
+][
+	dt: now/precise
+	r: copy ""
+	foreach field [year month day hour minute second] [
+		append r num-format dt/:field 2 3
+	]
+	stepwise [
+		skip r 8  insert . "-"
+		skip . 6  change . "-"
+		skip . 3  clear .
+	]
+	r
 ]
 
 
@@ -282,18 +315,6 @@ num-format: function [num [float! integer!] integral [integer!] frac [integer!] 
 ]
 
 
-count: function [
-	"Count occurrences of X in S (using `=`)"
-	s [series!]
-	x [any-type!]
-	;@@ TODO /case /same
-][
-	r: 0
-	while [s: find/tail s :x] [r: r + 1]
-	r
-]
-
-
 ; find-parse: func [srs ptrn] [
 ; 	unless forparse [pos: ptrn] srs [break] [do make error! "not found"] :pos
 ; ]
@@ -326,11 +347,27 @@ scope: func [
 ]
 
 
+current-key: function [/push newkey [string!] /back] [
+	stk: []
+	case [
+		push [append stk newkey]
+		back [take/last stk]
+	]
+	last stk
+]
+
 ;@@ BUG: unfortunately this traps return/exit
-eval-results-group: func [body [block!]] [
-	guard [
+eval-results-group: func [
+	"Evaluate code using EXPECT, PARAM, PARAM-EXACT functions to test certain results"
+	body	[block!]
+	/key id	[string!] "Specify an identifier to mark produced artifacts with"
+][
+	scope [
+		current-key/push id
+		leaving [current-key/back]
 		do-using body [									;-- need a context for these words
 			group: either string? :body/1 [body/1]["GLOBAL"]
+			group-key: does [id]
 
 			expect: function [
 				"EXPR should evaluate to anything but false, none or unset, else count it as error"
@@ -340,6 +377,7 @@ eval-results-group: func [body [block!]] [
 				red-log: copy "  Reduction log:"
 				inspect: func [exp [block!] val [any-type!]] [
 					repend red-log ["^/    " pad mold/flat/only exp 30 " => " mold :val]
+					:val
 				]
 				set/any 'r trace-deep :inspect expr
 				; set/any 'r do expr

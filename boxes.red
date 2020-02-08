@@ -53,7 +53,7 @@ boxes-ctx: context [
 	]
 
 	;; returns fitness of the box given by 2 pairs into the edges arrays: 0% if no match, 100% if perfect match
-	set 'fit-box function [edges [block!] xy1 [pair!] xy2 [pair!]] [
+	set 'fit-box function [edges [block!] xy1 [pair!] xy2 [pair!] /local hpos vpos prob x y x1 x2 y1 y2] [
 		h-edges: edges/1
 		v-edges: edges/2
 		ssize: units-to-pixels system/view/screens/1/size
@@ -274,7 +274,7 @@ boxes-ctx: context [
 
 	;@@ TODO: maybe make some boxes lower (to distinguish upper/lower case letters)
 	;; should I provide xy1,xy2? or just crop the image?
-	set 'find-glyph-boxes function [im [image!] /local bgnd] [
+	set 'find-glyph-boxes function [im [image!] /local bgnd x1 x2] [
 		min-contrast: 20%										;-- below this - treat pixel as background (20% seems best)
 		min-weight: 2%											;-- min % of line height that is considered part of a glyph (2% seems best)
 

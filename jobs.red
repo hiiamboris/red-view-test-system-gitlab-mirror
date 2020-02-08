@@ -25,26 +25,14 @@ comment {
 ;@@ TODO: master's status bar that tells current running script(test) and results...
 ;@@ TODO: prebuild the libredrt
 
-jobs: context [
+once: func [:w [set-word!] v [default!]] [unless value? to word! w [set w :v]]
+value-of: func ['w] [if value? to word! w [get w]]
 
-	timestamp: function [
-		"Get date & time in a sort-friendly YYYYMMDD-hhmmss-mmm format"
-	][
-		dt: now/precise
-		r: copy ""
-		foreach field [year month day hour minute second] [
-			append r num-format dt/:field 2 3
-		]
-		stepwise [
-			skip r 8  insert . "-"
-			skip . 6  change . "-"
-			skip . 3  clear .
-		]
-		r
-	]
+jobs: make any [value-of jobs  object!] [
 
-	working-dir: rejoin [%run- timestamp %/]
+	once working-dir: rejoin [%run- timestamp %/]
 
+	stack-friendly
 	file-for-test: function [
 		"Generate a script file name for a given test name/number"
 		test [integer! string! issue!]
@@ -69,11 +57,11 @@ jobs: context [
 		last-assigned-task-id: 0
 		last-completed-task-id: 0
 	]
-	workers: []											;-- up to max-workers-count length; 1=main worker, 2-4=heavy workers; new instances replace old ones
+	once workers: []									;-- up to max-workers-count length; 1=main worker, 2-4=heavy workers; new instances replace old ones
 	max-workers-count: 4								;@@ TODO: use CPU core count; https://stackoverflow.com/questions/150355/programmatically-find-the-number-of-cores-on-a-machine
-	last-worker-index: 0								;-- always increases - controls file numeration
+	once last-worker-index: 0							;-- always increases - controls file numeration
 
-	tasks: context [
+	once tasks: context [
 		last-id: 0							;-- every task is assigned a unique id
 		timeouts: #(						;@@ TODO: use these for deadlock detection
 			compile: 600.0					;-- 10 min - should be enough? @@ TODO: check by cpu load if they are compiling?
@@ -114,6 +102,7 @@ jobs: context [
 
 	;@@ TODO: somehow reflect worker type in file names (to know the inheritance)?
 
+	stack-friendly
 	restart-worker: function [
 		"Restart the previously created worker"
 		worker [object!]
@@ -129,6 +118,7 @@ jobs: context [
 		set worker start-worker
 	]
 
+	stack-friendly
 	start-worker: has [wc worker][ ; return info about it - to be used as an argument for jobs dispatch
 		if max-workers-count <= length? workers [ERROR "Out of allowed worker slots"]
 		wi: last-worker-index + 1
@@ -165,7 +155,9 @@ jobs: context [
 			}
 			;@@ TODO: hide worker's words from the user code
 			;@@ /input/output/error isn't working - see #4241
-			pid: call #composite {red --cli (to-local-file name) <(to-local-file stdin) 1>(to-local-file stdout) 2>(to-local-file stderr)}
+			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
+			pid: call/shell #composite {d:\devel\red\red-src\red\console-view-3369-nodebug.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
+			; pid: call #composite {red --cli (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			handle: get-pid-handle pid
 			log-info #composite {Started worker (name) ("(")PID:(pid)(")")}
 		]
@@ -175,6 +167,7 @@ jobs: context [
 		worker
 	]
 
+	stack-friendly
 	kill-worker: function [worker [object!]] [  ; when it hung (otherwise `quit` should be commanded)
 		assert [worker/pid]
 		; switch/default system/platform [
@@ -190,6 +183,7 @@ jobs: context [
 		]
 	]
 
+	stack-friendly
 	stop-worker: function [worker [object!]] [  ; when it hung (otherwise `quit` should be commanded)
 		assert [worker/pid]
 		unless alive? worker [				;-- terminated already?
@@ -210,24 +204,29 @@ jobs: context [
 		no
 	]
 
+	stack-friendly
 	stop-all-workers: function [] [
 		foreach worker workers [if worker/pid [stop-worker worker]]
 	]
 
+	stack-friendly
 	kill-all-workers: function [] [
 		foreach worker workers [if worker/pid [kill-worker worker]]
 	]
 
+	stack-friendly
 	alive?: function [worker [object!]] [
 		is-process-alive? worker/handle
 	]
 
 	;@@ should not check the worker output? otherwise someone might miss it later
+	stack-friendly
 	idle?: function [worker [object!]] [
 		worker/last-assigned-task-id = worker/last-completed-task-id
 	]
 
 	;; low level, does not check anything
+	stack-friendly
 	send-to*: function [worker [object!] command [string!]] [
 		new-id: worker/last-assigned-task-id: tasks/last-id: tasks/last-id + 1
 		task: make task! compose [
@@ -239,8 +238,9 @@ jobs: context [
 	]
 
 	;@@ TODO: dump all stuff ever sent to each worker somewhere; rather than creating 1-line files
+	stack-friendly
 	send-to: function [worker [object!] command [block!] /wait] [
-		task: send-to* worker worker/last-code: mold/only/all/flat command			;@@ BUG: /all may become unloadable - use it or not?
+		task: send-to* worker worker/last-code: mold/only/all/flat command			;@@ BUG: /all may become unloadable - FIXED by commit
 		if wait [wait-for-task task]
 		task
 		;@@ TODO: wait until worker signals it's running this task?
@@ -256,6 +256,7 @@ jobs: context [
 	; 	;; must also set `task` and `last-code`
 	; ]
 
+	stack-friendly
 	send-main: function [
 		"Send command to the main worker"
 		command [block!]
@@ -264,6 +265,7 @@ jobs: context [
 		send-to main-worker command
 	]
 
+	stack-friendly
 	send-heavy: function [   ; for compilations & long tests
 		"Send command to workers other than the main one"
 		command [block!]
@@ -284,6 +286,7 @@ jobs: context [
 
 	;@@ TODO: assign task types, collect info on each type (esp. duration), balance load based on predicted finish time
 
+	stack-friendly
 	wait-for-task: function [task [object!] /max period [float! integer! time!]] [		;@@ TODO: timeouts
 		if max [period: to time! period]
 		#assert [task/id]
@@ -318,6 +321,7 @@ jobs: context [
 
 
 
+	stack-friendly
 	peek-worker-output: func [worker [object!]] [		; does not consume but returns unprocessed part of worker's output file
 		to string! read/binary/seek worker/stdout worker/stdout-offset
 	]
@@ -330,6 +334,7 @@ jobs: context [
 	;; returns none if performing no task
 	;; returns id (integer) if next task is not complete
 	;; returns output (string) if next is complete
+	stack-friendly
 	read-task-report: function [worker [object!] /local id code timestamp output out-of-order] [
 		bin: read/binary/seek worker/stdout ofs: worker/stdout-offset
 

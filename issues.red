@@ -19,7 +19,9 @@ Red [
 ;; issue /types define what capabilities are given to the code: can it compile? can it interact?
 ;; point is not just clear definition, but that /compile & /layout can be parallelized but should not use screen-shots or actions
 
-;; TIP: issues title is mostly for informational purpose (when an issue fails and it's info is displayed for an overview)
+;; TIP: issues title is mostly for informational purpose:
+;;   first, when debugging an issue - it makes clear what we're looking for
+;;   second, when an issue fails this info can be displayed to provide the person running tests with a context for failure
 
 issue/interactive #4247 [
 	"[View] RADIO is toggled by default on GTK"
@@ -39,17 +41,21 @@ issue/interactive #4246 [
 	"[View] RADIO emits superfluous events on Windows and macOS"
 
 	;; logic: click, ensure it's not producing 2 events
-	list: copy []
+	list: []
+	push list
 	display [r: radio [append list face/data]]
+
 	click pos: r ~at~ [middle left + 10]
+	sync list
 	expect [list = reduce [true]]
+
 	click pos
-	expect [list = reduce [true]]		;; shouldn't call `on-change` again when already true
+	sync list
+	expect [list = reduce [true]]		;; shouldn't call `on-change` again when already checked
 ]
 
 issue/interactive #4245 [
 	"[View] CHECK treats NONE as truthy"
-
 	;; logic: click the button, should yield false
 	display [
 		do [list: copy []]
@@ -61,7 +67,7 @@ issue/interactive #4245 [
 	expect [list = reduce [false]]
 ]
 
-issue/layout #4244 [
+issue/interactive #4244 [
 	"[View] RADIO and CHECK faces treat only TRUE value as truthy"
 
 	display [r: radio data 'a c: check data 'b]
@@ -75,30 +81,32 @@ issue/interactive #4239 [
 	"[View] Transparent box turned loose doesn't honor it's parent's offset"
 
 	;; this requires screen- (not window-) shot
-	display [
-		sp: base magenta 20x300 loose draw [rotate 90 pen yello text 0x-20 "DRAG ME"]
-		on-drag [
-			face/offset/y: 0
-			pr/size/x: face/parent/size/x - face/offset/x - 20 
-			pr/offset/x: face/offset/x + 20 
-		] 
-		pr: panel [
-			at 0x0 box 300x300 #00FFFF01 react [
-				face/size/x: face/parent/size/x
+	wndw: display [			;-- /tight to remove `panel` inner paddings so box doesn't stick out of it
+		origin 5x5
+		panel 320x300 [		;-- contain other stuff inside, so there's always a gap between it and window border - otherwise can't detect a box there
+			origin 0x0 space 0x0
+			sp: base magenta 20x300 loose draw [rotate 90 pen yello text 0x-20 "DRAG ME"]
+			on-drag [
+				face/offset/y: 0
+				pr/size/x: face/parent/size/x - face/offset/x - 20 
+				pr/offset/x: face/offset/x + 20 
+			] 
+			pr: panel 300x300 [
+				origin 0x0
+				box 300x300 #00FFFF01
 			]
 		]
 	]
-	scrn1: screenshot
-	wndw: find-window-on scrn
+	shot1: capture-face/real wndw
 	; expect box [where: at scrn1/wndw  offset: 0x0  size: 20x300  coverage: > 90%  color: all magenta]
-	expect box [at scrn1/wndw  0x0  20x300 > 90% all magenta]
-	expect box [at scrn1/wndw 20x0 320x300  100% almost cyan]
+	expect [box [at shot1  5x5  20x300 > 70% all magenta]]
+	expect [box [at shot1 25x5 300x300  100% almost cyan]]
 	drag sp [right by 200]
 	settle-down 1 sec			;-- allow it some time to redraw & keep still
 
-	scrn2: screenshot
-	expect box [at scrn2/wndw 220x0 320x300 100% almost cyan]
-	;; broken code would yield that area black and cyan goes to the left 20x0-120x300
+	shot2: capture-face/real wndw
+	expect [box [at shot2 225x5 100x300 100% almost cyan]]
+	;; failed test will yield that area black and cyan goes to the left 20x0-120x300
 ]
 
 issue/layout #4238 [
@@ -110,9 +118,9 @@ issue/layout #4238 [
 		]
 	]
 
-	expect base: box [at shot center middle 100x100 > 70% all red]
-	expect fld/size/x > 50
-	expect box [at shot/base fld/offset fld/size > 90% all blue]
+	expect [base: box [at shot center middle 100x100 > 70% all red]]
+	expect [fld/size/x > 50]
+	expect [box [at shot/base fld/offset fld/size > 90% all blue]]
 	;; text forced upper alignment is a limitation of Windows - I'm not checking it
 
 	;@@ TODO: how to check rounding radius?

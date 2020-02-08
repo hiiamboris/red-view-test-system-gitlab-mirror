@@ -169,6 +169,18 @@ for-each: function [
 ; for-each [x: y [integer!] :v] [1 2.0 3] [probe x/2]
 
 
+count: function [
+	"Count occurrences of X in S (using `=`)"
+	s [series!]
+	x [any-type!]
+	;@@ TODO /case /same
+][
+	r: 0
+	while [s: find/tail s :x] [r: r + 1]
+	r
+]
+
+
 naive-map-each: func ['spec [word! block!] series [series!] code [block!] /only /eval /self /local tgt] [
 	tgt: make block! length? series
 	foreach (spec) series compose [
@@ -184,6 +196,7 @@ map-each: func ['spec [word! block!] series [series!] code [block!] /only /eval 
 	if any [word? spec not set-word? :spec/1] [
 		spec: compose [pos: (spec)]
 	]
+	#assert [function? :count]							;-- leaked words may override it :(
 	for-each (spec) old: series compose [
 		append/part tgt old at series (to word! spec/1)
 		(pick [append/only append] only) tgt (either eval ['reduce][()]) do code
@@ -194,4 +207,13 @@ map-each: func ['spec [word! block!] series [series!] code [block!] /only /eval 
 ]
 
 ; probe map-each/eval [x [integer!] y [integer! float!]] [1 2.0 3.0 4 5] [ [form x form y]]
+
+
+keep-type: function [list [series!] type [datatype! typeset!]] [
+	remove-each x list: copy list
+		either datatype? type
+			[[ type <> type? :x ]]
+			[[ not find type type? :x ]]
+	list
+]
 

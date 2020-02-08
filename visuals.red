@@ -4,8 +4,8 @@ Red [
 	license: 'BSD-3
 ]
 
-#include %boxes.red
 #include %dope.red
+#include %boxes.red
 
 ; #where's-my-error?
 
@@ -29,13 +29,25 @@ quacks-like-face?: func [o] [
 
 screenshot: does [capture]		;-- no refinements for it
 
+
+save-capture: function [im [image!]] [
+	#assert [0 < length? im]
+	name: #composite %"(jobs/working-dir)capture-(current-key)-(timestamp).png"
+	part: skip tail name -4
+	while [exists? name] [
+		append clear part rejoin ["-" i ".png"]
+		i: i + 1
+	]
+	save/as name im 'png
+	im
+]
+
 ;@@ TODO: automatic screen capture test as well, and check the RAM growth, and also the desktop (or artificial) background color
-capture: func [
+capture: function [
 	"Capture the screen or a part of"
 	/into im [image! none!] "Use an existing image buffer (none allocates a new one and is synonymous to no /into)"
 	/area nw [pair!] se [pair!] "Specify north-west and south-east corners rather than the whole screen"
 	/real "NW and SE are in pixels (default: units)"
-	/local dpi
 ][
 	#assert [any [not area  nw/x < se/x]]
 	#assert [any [not area  nw/y < se/y]]
@@ -44,7 +56,11 @@ capture: func [
 		nw: units-to-pixels nw
 		se: units-to-pixels se
 	]
-	grab-screenshot* im nw attempt [se - nw]
+	im: grab-screenshot* im nw attempt [se - nw]
+	#assert [0 < length? im]
+	save-capture im
+	log-artifact object [type: 'image image: im key: current-key]
+	im
 ]
 
 ;; two alternatives to (broken) `to-image face`:
@@ -57,6 +73,7 @@ capture-face: function [
 	/real "Get real on-screen appearance (could be overlapped!)"
 	/with img [image!] "Provide an already captured whole window image"
 ][
+	#assert ['window <> face/type]
 	win: window-of face
 	#assert [any [handle? win/state/1 integer? win/state/1]]		;-- handle must be set!
 	bor: borders-of win
@@ -67,7 +84,9 @@ capture-face: function [
 	][
 		default img: [to-image win]
 		ofs: bor/1 + units-to-pixels face-to-window 0x0 face
-		get-image-part img ofs siz
+		img: get-image-part img ofs siz
+		#assert [0 < length? img]
+		save-capture img
 	]
 ]
 
@@ -76,17 +95,25 @@ capture-window: function [
 	"Capture an image of the WINDOW"
 	window [object!]
 	/real "Get real on-screen appearance (could be overlapped!)"
+	/whole "Include non-client area"
+	/with img [image!] "Provide an already captured whole window image"
 ][
 	#assert ['window = window/type]
+	unless whole [bor: borders-of window]
 	either real [
-		bor: borders-of window
 		; siz: units-to-pixels window/size		;-- has a rounding error of up to 1px
-		img: to-image window  siz: img/size		;-- use the size provided by to-image
+		default img: [to-image window]
+		siz: img/size				;-- use the size provided by to-image
 		ofs: get-client-offset window/state/1
-		capture/area/real ofs - bor/1 ofs - bor/1 + siz
+		either whole
+			[ capture/area/real ofs ofs + siz ]
+			[ capture/area/real ofs - bor/1 ofs - bor/1 + siz ]
 		; capture/area/real ofs - bor/1 ofs + siz + bor/2
 	][
-		to-image window
+		default img: [to-image window]
+		unless whole [img: get-image-part img bor/1 img/size - bor/2 - bor/1]
+		#assert [0 < length? img]
+		save-capture img
 	]
 ]
 
@@ -123,11 +150,13 @@ find-window-on: function [
 	"On a solid background - find a window (return it as object [size: offset:]); or none"
 	image	[image!]
 ][
+	; save/as %buggy-image.png image 'png
 	r: object [size: 0x0 offset: none]
-	foreach [_ offset size] find-boxes find-edges image [
+	foreach [_ xy1 xy2] find-boxes find-edges image [
+		size: pixels-to-units xy2 - xy1 + 1
 		if r/size/x * r/size/y < (size/x * size/y) [
 			r/size: size
-			r/offset: offset
+			r/offset: pixels-to-units xy1
 		]
 	]
 	all [r/offset r]
@@ -146,6 +175,7 @@ imprint-edges: function [
 	foreach [prob x y1 y2] edges/2 [
 		for y y1 y2 [poke im as-pair x y color * prob]
 	]
+	im
 ]
 
 imprint-boxes: function [
@@ -167,6 +197,7 @@ imprint-boxes: function [
 			poke im as-pair x2 y c
 		]
 	]
+	im
 ]
 
 
@@ -205,25 +236,89 @@ explore: function [
 	im [image!]
 ][
 	factor: 5		;-- low values generate too much latency
-	scr: system/view/screens/1/size
-	im2: make image! scr * 3x6 / 10
-	sz2: im2/size + (factor * 2 - 1) / factor / 2
-	im3: make image! sz2 * 2
-	ofs-scale*100: 100 * im/size / sz1: scr * 0.6
-	r: reactor [center: 0x0]
+	full-size: system/view/screens/1/size * 0.6
+	fit?: within? im/size * factor 0x0 full-size		;-- should fit it all or have a separate magnifier?
+
+	whole-sz: full-size
+	whole-sz/x: whole-sz/y * im/size/x / im/size/y		;-- "whole image" area size
+	if whole-sz/x > full-size/x [whole-sz: whole-sz * full-size/x / whole-sz/x]
+
+	crop-sz: full-size * 1x2 / 2 / factor / 2 * 2		;-- cropped image size in pixels, even
+	crop-im: make image! crop-sz
+	magn-im: make image! crop-sz * factor				;-- magnified image
+	fnt: make font! [name: "Courier New" size: 7]
+	either fit? [
+		im: upscale im factor
+		whole-sz: im/size
+		ofs-scale: 1.0 / factor
+	][
+		ofs-scale: 1.0 * im/size/x / whole-sz/x
+	]
+	; system/view/auto-sync?: no
 	view compose [
-		part:  image (im2/size) im2
-		whole: image (sz1) (im)
-		all-over on-over [r/center: event/offset]
-		react [
-			im3/rgb: coal								;-- fill the background
-			part/image:
-				upscale/into
-					get-image-part/into im r/center * ofs-scale*100 / 100 - sz2 sz2 * 2 im3
-					factor
-					im2
+		below
+		(either fit? [ [] ][ compose [magn: image (magn-im/size) magn-im return] ])
+		whole: image (whole-sz) (im)
+		at 0x0 overlay: box (whole-sz) #000000FE react [face/offset: whole/offset]
+		all-over on-over [
+			if ofs1 = event/offset [exit]
+			ofs1: event/offset
+			ofs2: ofs1 * ofs-scale + 1
+			text-ofs: max 0x0 ofs1 - 60x12
+			text-ofs: min text-ofs whole-sz - 60x25
+			crop-im/rgb: coal							;-- fill the background
+			overlay/draw: compose [
+				pen gold font fnt
+				line (ofs1 * 1x0) (as-pair ofs1/x whole-sz/y)
+				line (ofs1 * 0x1) (as-pair whole-sz/x ofs1/y)
+				text (text-ofs)        (form ofs2)
+				text (text-ofs + 0x16) (form pixels-to-units ofs2)
+			]
+			; show overlay
+			unless fit? [
+				magn/image:
+					upscale/into
+						get-image-part/into im ofs2 - (crop-sz / 2) crop-sz crop-im
+						factor
+						magn-im
+				; show magn
+			]
 		]
 	]
+	; system/view/auto-sync?: yes
+]
+
+
+explore-artifact: function [art [object!]] [
+	;@@ TODO: add & show artifact time
+	explore-value: function [v /local k] [
+		case [
+			object? o: :v [
+				exp-map: copy #()
+				if all [in o 'type  o/type = 'box] [
+					exp-map/edges: [if edges [explore imprint-edges copy image edges magenta]]
+					exp-map/boxes: [if boxes [explore imprint-boxes copy image boxes cyan]]
+					exp-map/box:   [if box   [explore imprint-boxes copy image reduce [100% box/1 box/1 + box/2] red]]
+				]
+				view/options map-each [k v] to block! o [
+					compose/deep/only [
+						text 100 (rejoin [k ":"])
+						button 300 left (mold/flat/part :v 70)
+						on-click [
+							either act: select exp-map (to lit-word! k)
+								[do with o act]
+								[explore-value quote (:v)]
+						]
+						return
+					]
+				] [text: "Artifact"]
+			]
+			image? :v [
+				explore v
+			]
+		]
+	]
+	explore-value art
 ]
 
 
@@ -270,17 +365,22 @@ face-at: function [
 
 
 context [
-	coerce: func ['word [word!] type [datatype!]] [
+	coerce: func ['word [word!] type [datatype!] /local r] [
 		if any [word? get word path? get word] [set word get get word]
 		;@@ TODO: log-trace coercions?
-		type = type? get word
+		also r: type = type? get word
+			unless r [log-trace #composite "coerce: (word) -> (get word) [expected: (type)]"]
 	]
+
+	u->p: :units-to-pixels
+	p->u: :pixels-to-units
 
 
 	;; uses `coerce`
 	set 'amount-of function [
 		"Count the amount (%) of COLOR on an IMAGE"
 		spec	[block!] "E.g. [red on img], [almost blue on img]"
+		/local clr cnt
 	][
 		unless parse/case spec [
 			set verb opt ['almost | 'all] (default verb: ['all])
@@ -301,12 +401,12 @@ context [
 	]
 
 
+	stack-friendly
 	box-parse: function [
 		"Internal. Parse box dialect spec block into an object"
 		spec [block!]
 		/local
-			where-op color-op cover-op
-			h-anchor v-anchor
+			color-op h-anchor v-anchor w
 	][
 		=where=: [
 			opt quote where:
@@ -317,7 +417,7 @@ context [
 			|	set where word! (area: none)
 			]
 			if (coerce where image!)
-			(if none? where-op [where-op: 'around])		;-- default to 'around' mode
+			(default where-op: ['around])			;-- default to 'around' mode
 		]
 		
 		=offset=: [
@@ -344,6 +444,7 @@ context [
 			opt quote coverage:
 			set cover-op opt ['= | '> | '< | '<= | '>=]
 			set coverage percent!
+			(default cover-op: ['=])
 		]
 
 		=coloration=: [
@@ -372,7 +473,7 @@ context [
 
 		foreach [word type] [
 			image  image!
-			area   object!		;-- can be result of `box` or face!
+			area   object!		;-- can be result of `box` or a face!
 			size   pair!
 			offset pair!
 			color  tuple!
@@ -391,26 +492,33 @@ context [
 		object map-each/eval w words [[to set-word! w 'quote get w]]
 	]
 
+	stack-friendly
 	test-coverage: function [
 		"Internal. Test coverage and coloration of an IMAGE given SPEC"
 		image	[image!]
 		spec	[object!] "Only /coverage /cover-op /color /color-op are used"
-		/part offset [pair!] size [pair!] "Specify a region only"
+		/part offset [pair!] size [pair!] "Specify a region only (in PIXELS!)"
+		/artifact art [object!] "Save processing info into ARTIFACT"
+		/local color count
 	][
 		unless spec/color [return yes]			;-- if no color info specified - it's an automatic match
 		#assert [all [spec/coverage spec/cover-op spec/color-op]]
+		cov: object [image: colorset: reduced: amount: result: none]
+		if artifact [art/coverage: cov]
 
-		if part [image: get-image-part offset size]
+		if part [image: get-image-part image offset + 1x1 size - 3x3]
+		cov/image: image
 		;@@ TODO: maybe exclude borders? eat a pixel from all sides? to account for scaling inaccuracies
 
-		cs: get-colorset image
+		cov/colorset: cs: get-colorset image
 		req-match: select [all 100% almost 90%] spec/color-op		;-- required similarity of image colors to the one provided
 		total: image/size/x * image/size/y
-		coverage: sum map-each [color count] cs [					;-- count coverage of matching colors
+		cov/amount: coverage: sum map-each [color count] cs [		;-- count coverage of matching colors
 			match: 100% - contrast color spec/color
 			either match < req-match [0%][100% * count / total]
 		]
-		do reduce [coverage cover-op spec/coverage]					;-- test the coverage requirement ;@@ TODO: log this if it fails?
+		;@@ TODO: reflect this in the artifact! 
+		cov/result: do cov/reduced: reduce [coverage spec/cover-op spec/coverage]	;-- test the coverage requirement ;@@ TODO: log this if it fails?
 	]
 
 
@@ -429,19 +537,23 @@ context [
 	set 'box function [
 		"Find a box on an image given some characteristics"
 		spec [block!]
+		/local art
 	][
-		spec: box-parse spec
+		log-artifact art: object compose/only [
+			type: 'box
+			spec: (copy spec)
+			spec-obj: image: coverage: box: boxes: edges: result: none
+			key: current-key
+		]
+		art/spec-obj: spec: box-parse spec
 		#assert [spec/image]
 		#assert [spec/where-op]
 
-		u->p: :units-to-pixels
-		p->u: :pixels-to-units
-
 		bestbox: function [image area] [
 			#assert [object? area]
-			edges: find-edges image
+			art/edges: edges: find-edges image
 			xy2: area/size + xy1: area/offset
-			set [prob xy1 xy2]  fit-box  edges  u->p xy1  u->p xy2
+			set [prob xy1 xy2]  probe fit-box  edges  u->p xy1  u->p xy2
 			all [										;-- return none or [offset size]
 				0 <> prob								;-- 0% = no match
 				reduce [xy1  xy2 - xy1]					;-- return real pixels - for possible image cropping
@@ -449,7 +561,7 @@ context [
 		]
 
 		scan4box: function [image box-size /anchors h v] [
-			boxes: find-boxes find-edges image
+			art/boxes: boxes: find-boxes art/edges: find-edges image
 			all [
 				box: either anchors
 					[find-box/anchors boxes u->p box-size h v image/size]
@@ -458,14 +570,14 @@ context [
 			]
 		]
 
-		image: spec/image
+		art/image: image: spec/image
 
 		either spec/where-op = 'around [
 			area: spec/area			;-- `area` defines a box on an `image`
 			#assert [none? spec/offset]
 		][
 			if spec/area [			;-- won't be needing the whole image; crop it
-				image: get-image-part
+				art/image: image: get-image-part
 					image
 					u->p spec/area/offset
 					u->p spec/area/size
@@ -473,26 +585,41 @@ context [
 			area: spec				;-- else use offset & size from spec itself
 		]
 
-		either spec/offset [				;-- no need to extract all boxes - have size and offset
+		art/result: either spec/offset [				;-- no need to extract all boxes - have size and offset
 			#assert [none? spec/h-anchor]		;-- anchors only make sense without offset
 			#assert [none? spec/v-anchor]
 			all [
-				set [offset size] bestbox image area
-				test-coverage/part image spec offset size
+				? area
+				set [offset size] art/box: bestbox image area
+				test-coverage/part/artifact image spec offset size art
 				object compose [offset: (p->u offset) size: (p->u size)]		;-- should be scaled, for compatibility with faces
 			]
 		][									;-- without offset we look for a box of a specific size among all boxes
-			box: switch spec/where-op [
+			art/box: box: switch spec/where-op [
 				inside within [scan4box image spec/size]
-				at on [scan4box/anchors image spec/size h-anchor v-anchor]
+				at on [scan4box/anchors image spec/size spec/h-anchor spec/v-anchor]
 			]
 			all [
 				set [offset size] box
 				image: get-image-part image offset size
-				test-coverage image spec
+				test-coverage/artifact image spec art
 				object compose [offset: (p->u offset) size: (p->u size)]
 			]
 		]
 	]
 
 ]
+
+
+
+
+
+
+; s: screenshot
+; box [30x20 within s]
+; print mold/flat message-log
+; map-each [x [string!]] message-log [? x]
+; map-each [x [object!]] message-log [? x]
+; log-review
+; explore-artifact first find message-log object!
+

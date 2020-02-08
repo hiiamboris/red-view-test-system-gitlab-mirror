@@ -274,8 +274,13 @@ Red [
 			im		[red-image!]
 			horz	[red-block!]
 			vert	[red-block!]
-			/local imdt [image-data! value]
+			/local
+				imdt [image-data! value]
 		][
+			if any [
+				im/size and FFFFh = 0
+				im/size >>> 16 = 0
+			] [exit]									;-- avoid crashes and failures with an empty image
 			imdt/img: im
 			image-lock imdt								;-- almost free
 			fill-contrasts imdt							;-- fill takes ~50% time
