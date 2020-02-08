@@ -59,6 +59,7 @@ toolset: context [
 		.. but for that I need to first finish the linear testing pipeline ..
 	}
 
+	stack-friendly
 	compile: function [
 		title	[string! integer! issue!] "Issue number"	;@@ TODO: automatically get this from the issue
 		code	[block! string!] "Code to compile"			;-- string is meant for invalid code - non-loadable
@@ -94,6 +95,7 @@ toolset: context [
 
 
 	;; VARIANT - top level only! (for now at least;; TODO - deep variant)
+	stack-friendly
 	expand-variants: function [definition [block!]] [
 		v-numbers: copy []
 		forparse [
@@ -128,9 +130,12 @@ toolset: context [
 		variants
 	]
 
-	;@@ TODO: box these into a context
-	should: func ['not? [word!] 'what? [word!]] []	;@@ TODO
+	; ;@@ TODO: box these into a context
+	; should: func ['not? [word!] 'what? [word!]] []	;@@ TODO
 
+	set '... none			;-- this is required to load cross-linked face trees
+
+	stack-friendly
 	offload: function [
 		"Let one of the workers to perform CODE"
 		code	[block!]
@@ -153,7 +158,8 @@ toolset: context [
 
 	;@@ TODO: keep all important stuff in contexts and context names - somewhere else? for sync not to override them
 
-	sync: pull: function [
+	pull: stack-friendly
+	sync: function [
 		"Sets local WORD to the value of this word held by main worker"
 		'word	[any-word!]
 		;@@ TODO: /with other-worker.. (or /from)
@@ -170,6 +176,7 @@ toolset: context [
 		get word
 	]
 
+	stack-friendly
 	push: function [
 		"Sets main worker's WORD it's local value"
 		'word	[any-word!]
@@ -181,6 +188,7 @@ toolset: context [
 
 	;@@ TODO: upon exiting the interactive issue code - offload [unview/all]
 
+	stack-friendly
 	display: function [
 		"View LAYOUT in a main-worker thread; return the window object and sync all set-words"
 		layout [block!]
@@ -207,6 +215,7 @@ toolset: context [
 
 	;@@ BUG: see #4268,#4269 - `to-image` cannot be used on faces directly
 	;; however it seems to work with the whole window, so we just have to crop it after
+	stack-friendly
 	shoot: function [
 		"Capture the LAYOUT in a main-worker thread using to-image; return the image"
 		'layout [block! word!] "Layout block or name of a face known to the worker"
@@ -222,20 +231,24 @@ toolset: context [
 		;@@ img: offload/return compose [to-image (layout)]	-- doesn't work
 		;@@ workaround:
 		img: offload/return compose [to-image top-window]
-		either layout = 'top-window
-			[ img: capture-window/with get layout img ]
-			[ img: capture-face/with get layout img ]
+		layout: get layout
+		#assert [object? :layout]
+		either layout/type = 'window
+			[ img: capture-window/with layout img ]
+			[ img: capture-face/with layout img ]
 
 		if close? [offload [unview]]
 		img
 	]
 
+	stack-friendly
 	close-windows: function [
 		"Close all windows opened by the main-worker"
 	][
 		offload [unview/all]
 	]
 
+	stack-friendly
 	settle-down: function [
 		"Wait until there's no movement on the screen or time is out"
 		num		[integer! float!]
@@ -266,6 +279,7 @@ toolset: context [
 	]
 
 	;; right now it just jumps to the destination point
+	stack-friendly
 	drag: function [
 		"Simulate a drag & drop event"
 		start	[object! pair!] "Where to click: face object or a screen coordinate"
@@ -286,8 +300,10 @@ toolset: context [
 			path: amnt * select [left -1x0 right 1x0 up 0x-1 down 0x1] dir
 		]
 		simulate-input-raw compose [(start)  + lmb  (start + path)  - lmb]
+		offload body-of :do-queued-events				;-- let worker process the drag events
 	]
 
+	stack-friendly
 	click: function [
 		"Simulate a left click on a center of face object or at specific point"
 		target		[object! pair!] "Face object or a screen coordinate"
@@ -320,6 +336,11 @@ toolset: context [
 		]
 		set [code flags] definition
 		if flags/interactive [bgnd: display-background do-queued-events]
+
+		;; for now, just remove `should not.. patterns` @@ TODO: use them
+		code: copy code
+		parse/case code [any [to remove ['should 'not ['crash | 'hang | 'error 'out]]] to end]
+
 		variants: expand-variants code
 		foreach [vnum vcode] variants [
 			eval-results-group/key vcode title
@@ -329,6 +350,7 @@ toolset: context [
 		if bgnd [unview/only bgnd]		;@@ TODO: display it once only?
 	]
 
+	stack-friendly
 	form-issue-title: func [
 		"Form a normalized issue title from it's number or #issue value"
 		title	[integer! issue! string!]
@@ -341,6 +363,7 @@ toolset: context [
 	]
 
 	;@@ TODO: special context for the tester as well, to preserve it's words
+	stack-friendly
 	display-background: does [
 		background: view/flags/tight/no-wait compose [
 			base (system/view/screens/1/size) white

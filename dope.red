@@ -91,6 +91,7 @@ trace: func [
 ;;  add 1 :.
 ;;  100 / :.
 ;; then `trace` the result and log the outputs
+;; @@ TODO: it's simple now - no lit/get-args support; handle with care or extend
 trace-deep: function [
 	"Deeply trace a set of expressions"			;@@ TODO: remove `quote` once apply is available
 	inspect	[function!] "func [expr [block!] result [any-type!]]"
@@ -112,7 +113,6 @@ trace-deep: function [
 		op!
 		function!
 	]
-	;@@ BUG: double evaluation can happen if something returns a function - TODO: use quote
 
 	wrap: func [x [any-type!]] [
 		either any [			;-- quote evaluatable types
@@ -135,7 +135,7 @@ trace-deep: function [
 		expr: copy/part code next code
 		change/only code wrap inspect expr do expr
 	]
-	rewrite-next: func [code /no-op /local start end v1 v2 r arity expr rewrite?] [
+	rewrite-next: func [code /no-op /local start end v1 v2 r arity expr rewrite? _] [
 		assert [not empty? code]
 		;; correct for the set-word / set-path bug - rewrite every set-expr with it's result
 		start: code
@@ -159,7 +159,7 @@ trace-deep: function [
 			all [									;-- a function call - recurse into it
 				any [
 					word? :v1
-					all [path? :v1  v1: preprocessor/value-path? v1]
+					all [path? :v1  set [v1 _] preprocessor/value-path? v1]
 				]
 				find [native! action! function! routine!] type?/word get/any v1
 			][
@@ -183,7 +183,7 @@ trace-deep: function [
 			]
 		]
 		if rewrite? [
-			expr: copy/deep/part code end		;-- have to make a copy or it may be modified by `do`
+			expr: copy/deep/part code end			;-- have to make a copy or it may be modified by `do`
 			set/any 'r inspect expr do/next code 'end
 			change/part/only code wrap :r end
 		]
@@ -347,7 +347,7 @@ scope: func [
 ]
 
 
-current-key: function [/push newkey [string!] /back] [
+current-key: function [/push newkey [string! none!] /back] [
 	stk: []
 	case [
 		push [append stk newkey]
@@ -369,6 +369,7 @@ eval-results-group: func [
 			group: either string? :body/1 [body/1]["GLOBAL"]
 			group-key: does [id]
 
+			stack-friendly
 			expect: function [
 				"EXPR should evaluate to anything but false, none or unset, else count it as error"
 				expr [block!]
@@ -388,6 +389,7 @@ eval-results-group: func [
 			]
 
 			;@@ get rid of this? `expect` is better
+			stack-friendly
 			param-exact: function [expr [block!] expected [any-type!] /blame culprits [block!] /local val] [
 				set/any 'val do expr
 				either not equal? :val :expected
@@ -396,6 +398,8 @@ if blame [foreach evil culprits [? (get evil)]]		;@@ TODO!!
 					]
 					[inform #composite "(group): (mold expr) yielded an acceptable (:val)"]
 			]
+
+			stack-friendly
 			param: function [expr [block!] expected [block!] /blame culprits [block!] /local val crit-lo crit-hi warn-lo warn-hi ideal] [
 				set/any 'val do expr
 				unless number? :val [

@@ -102,7 +102,6 @@ issue/interactive #4239 [
 	expect [box [at shot1  5x5  20x300 > 70% all magenta]]
 	expect [box [at shot1 25x5 300x300  100% almost cyan]]
 	drag sp [right by 200]
-	settle-down 1 sec			;-- allow it some time to redraw & keep still
 
 	shot2: capture-face/real wndw
 	expect [box [at shot2 225x5 100x300 100% almost cyan]]
@@ -121,7 +120,7 @@ issue/layout #4238 [
 	expect [base: box [at shot center middle 100x100 > 70% all red]]
 	expect [fld/size/x > 50]
 	expect [box [at shot/base fld/offset fld/size > 90% all blue]]
-	;; text forced upper alignment is a limitation of Windows - I'm not checking it
+	;; text forced upper alignment is a limitation of Windows' native controls - I'm not checking it
 
 	;@@ TODO: how to check rounding radius?
 ]
@@ -130,16 +129,17 @@ issue/layout #4238 [
 
 issue/interactive #4226 [
 	"[View] FIELD is not draggable on macOS"
-	should not error out
-
+	should not error out		;@@ TODO: check worker's (out of order) output for errors
 	w: display [size 200x50 fld: field loose]
 	s1: shoot w
 	o1: fld/offset
-	expect box [fld/offset fld/size at s1 left top]
+	expect [box [at s1 fld/offset fld/size]]
 	drag fld [right by 20]
 	s2: shoot w
-	expect fld/offset = (o1 + 20x0)			;@@ TODO: scale it by dpi; and use fuzzy eval-results ;@@ or rather think of a strategy of automatic scaling of all coordinates
-	expect box [at s2 fld/offset fld/size]
+	sync fld
+	expect [fld/offset/y = o1/y]
+	param  [fld/offset/x - o1/x] [17 < 18 < 20 > 22 > 23]
+	expect [box [at s2 fld/offset fld/size]]
 ]
 
 ;@@ TODO: #4213 requires specific fonts installed - how to handle?? wait until Red can be packaged with custom fonts? or ask testers to install those?

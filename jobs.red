@@ -30,7 +30,7 @@ value-of: func ['w] [if value? to word! w [get w]]
 
 jobs: make any [value-of jobs  object!] [
 
-	once working-dir: rejoin [%run- timestamp %/]
+	once working-dir: rejoin [%logs/run- timestamp %/]
 
 	stack-friendly
 	file-for-test: function [
@@ -122,7 +122,7 @@ jobs: make any [value-of jobs  object!] [
 	start-worker: has [wc worker][ ; return info about it - to be used as an argument for jobs dispatch
 		if max-workers-count <= length? workers [ERROR "Out of allowed worker slots"]
 		wi: last-worker-index + 1
-		unless exists? working-dir [create-dir working-dir]
+		unless exists? working-dir [make-dir/deep working-dir]
 		worker: make worker! [
 			stdin:  #composite %"(working-dir)stdin-(wi).txt"
 			stdout: #composite %"(working-dir)stdout-(wi).txt"
