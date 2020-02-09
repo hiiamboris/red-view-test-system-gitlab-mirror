@@ -34,9 +34,9 @@ save-capture: function [im [image!]] [
 	#assert [0 < length? im]
 	name: #composite %"(jobs/working-dir)capture-(current-key)-(timestamp).png"
 	part: skip tail name -4
+	i: 0
 	while [exists? name] [
-		append clear part rejoin ["-" i ".png"]
-		i: i + 1
+		append clear part rejoin ["-" i: i + 1 ".png"]
 	]
 	save/as name im 'png
 	im
@@ -59,7 +59,7 @@ capture: function [
 	im: grab-screenshot* im nw attempt [se - nw]
 	#assert [0 < length? im]
 	save-capture im
-	log-artifact object [type: 'image image: im key: current-key]
+	log-image im
 	im
 ]
 
@@ -167,13 +167,14 @@ imprint-edges: function [
 	"Imprints edges into an image"
 	im		[image!]
 	edges	[block!]
-	color	[tuple!]
 ][
+	~:  make op! :as-pair
+	++: make op! :at
 	foreach [prob y x1 x2] edges/1 [
-		for x x1 x2 [poke im as-pair x y color * prob]
+		for x x1 x2 [i: im ++ (x ~ y) i/1: white - i/1 * prob + (1.0 - prob * i/1)]
 	]
 	foreach [prob x y1 y2] edges/2 [
-		for y y1 y2 [poke im as-pair x y color * prob]
+		for y y1 y2 [i: im ++ (x ~ y) i/1: white - i/1 * prob + (1.0 - prob * i/1)]
 	]
 	im
 ]
@@ -182,19 +183,20 @@ imprint-boxes: function [
 	"Imprints boxes into an image"
 	im		[image!]
 	bxs		[block!]
-	color	[tuple!]
 ][
+	~:  make op! :as-pair
+	++: make op! :at
 	foreach [prob xy1 xy2] bxs [
 		y1: xy1/y  y2: xy2/y
 		x1: xy1/x  x2: xy2/x
-		c: color * prob
+		prob2: 1.0 - prob
 		for x x1 x2 [
-			poke im as-pair x y1 c
-			poke im as-pair x y2 c
+			i: im ++ (x ~ y1) i/1: white - i/1 * prob + (prob2 * i/1)
+			i: im ++ (x ~ y2) i/1: white - i/1 * prob + (prob2 * i/1)
 		]
 		for y y1 y2 [
-			poke im as-pair x1 y c
-			poke im as-pair x2 y c
+			i: im ++ (x1 ~ y) i/1: white - i/1 * prob + (prob2 * i/1)
+			i: im ++ (x2 ~ y) i/1: white - i/1 * prob + (prob2 * i/1)
 		]
 	]
 	im
@@ -296,9 +298,9 @@ explore-artifact: function [art [object!]] [
 			object? o: :v [
 				exp-map: copy #()
 				if all [in o 'type  o/type = 'box] [
-					exp-map/edges: [if edges [explore imprint-edges copy image edges magenta]]
-					exp-map/boxes: [if boxes [explore imprint-boxes copy image boxes cyan]]
-					exp-map/box:   [if box   [explore imprint-boxes copy image reduce [100% box/1 box/1 + box/2] red]]
+					exp-map/edges: [if edges [explore imprint-edges copy image edges]]
+					exp-map/boxes: [if boxes [explore imprint-boxes copy image boxes]]
+					exp-map/box:   [if box   [explore imprint-boxes copy image reduce [100% box/1 box/1 + box/2]]]
 				]
 				view/options map-each [k v] to block! o [
 					compose/deep/only [
@@ -365,11 +367,12 @@ face-at: function [
 
 
 context [
+	stack-friendly
 	coerce: func ['word [word!] type [datatype!] /local r] [
-		if any [word? get word path? get word] [set word get get word]
+		if any [word? get/any word path? get/any word] [set/any word get/any get word]
 		;@@ TODO: log-trace coercions?
-		also r: type = type? get word
-			unless r [log-trace #composite "coerce: (word) -> (get word) [expected: (type)]"]
+		also r: type = type? get/any word
+			unless r [log-trace #composite "coerce: (word) -> (mold/flat/part get/any word 40) [expected: (type)]"]
 	]
 
 	u->p: :units-to-pixels
@@ -402,7 +405,7 @@ context [
 
 
 	stack-friendly
-	box-parse: function [
+	parse-box-spec: function [
 		"Internal. Parse box dialect spec block into an object"
 		spec [block!]
 		/local
@@ -466,27 +469,24 @@ context [
 
 		unless parse/case spec =spec= [ERROR "Invalid box spec: (mold spec)"]
 
-		either path? where [
-			set [image area] as block! where
-			if 2 < length? where [ERROR "Invalid box spec (mold spec): extra path items in (where)"]
-		][image: where]
+		image: where
 
-		foreach [word type] [
-			image  image!
-			area   object!		;-- can be result of `box` or a face!
-			size   pair!
-			offset pair!
-			color  tuple!
-		][
-			type: get type
-			word: get word
-			if any [word? :word path? :word] [
-				value: get word
-				unless type = type? :value [
-					ERROR "Invalid box spec (mold spec): (word) evaluates to (mold type? :value), expected (mold type)"
-				]
-			]
-		]
+		; foreach [word type] [
+		; 	image  image!
+		; 	area   object!		;-- can be result of `box` or a face!
+		; 	size   pair!
+		; 	offset pair!
+		; 	color  tuple!
+		; ][
+		; 	type: get type
+		; 	word: get word
+		; 	if any [word? :word path? :word] [
+		; 		value: get word
+		; 		unless type = type? :value [
+		; 			ERROR "Invalid box spec (mold spec): (word) evaluates to (mold type? :value), expected (mold type)"
+		; 		]
+		; 	]
+		; ]
 
 		words: [where-op image area h-anchor v-anchor offset size cover-op coverage color-op color]
 		object map-each/eval w words [[to set-word! w 'quote get w]]
@@ -545,7 +545,7 @@ context [
 			spec-obj: image: coverage: box: boxes: edges: result: none
 			key: current-key
 		]
-		art/spec-obj: spec: box-parse spec
+		art/spec-obj: spec: parse-box-spec spec
 		#assert [spec/image]
 		#assert [spec/where-op]
 
@@ -553,7 +553,7 @@ context [
 			#assert [object? area]
 			art/edges: edges: find-edges image
 			xy2: area/size + xy1: area/offset
-			set [prob xy1 xy2]  probe fit-box  edges  u->p xy1  u->p xy2
+			set [prob xy1 xy2]  fit-box  edges  u->p xy1  u->p xy2
 			all [										;-- return none or [offset size]
 				0 <> prob								;-- 0% = no match
 				reduce [xy1  xy2 - xy1]					;-- return real pixels - for possible image cropping
@@ -608,8 +608,69 @@ context [
 		]
 	]
 
-]
 
+	;@@ TODO: so far there's only one instance of this; write more tests using `text`; how the dialect will look like?
+	stack-friendly
+	parse-text-spec: function [
+		"Internal. Parse text dialect spec block into an object"
+		spec [block!]
+		/local
+			color-op h-anchor v-anchor w
+	][
+		=v-anchor=: [set v-anchor ['top | 'middle | 'bottom]]
+		=h-anchor=: [set h-anchor ['left | 'center | 'right]]
+		=h+v-anchors=: [=h-anchor= opt =v-anchor= | =v-anchor= opt =h-anchor=]
+		=anchors=: [
+			opt [quote anchors: | quote anchor:]
+			=h+v-anchors=
+		]
+
+		=where=: [
+			opt quote where:
+			set where-op opt ['in | 'within | 'inside]		;-- all are the same
+			[
+				ahead path! into [set where word! set area word!]
+				if (coerce area object!)
+			|	set where word! (area: none)
+			]
+			if (coerce where image!)
+			(default where-op: ['in])						;-- default to 'in' mode; allow op-less `where: image` expression
+		]
+		
+		unless parse/case spec [
+			'aligned =anchors= =where=
+		|	=where= 'aligned =anchors=
+		] [ERROR "Invalid text spec: (mold spec)"]
+
+		#assert [image? where]
+		image: where
+
+		words: [where-op image area h-anchor v-anchor]
+		object map-each/eval w words [[to set-word! w 'quote get w]]
+	]
+
+	;@@ TODO: better name? this is too common
+	set 'text function [
+		"Verify text alignment with the provided SPEC"
+		spec [block!]
+	][
+		log-artifact art: object compose/only [
+			type: 'text
+			spec: (copy spec)
+			spec-obj: image: box: none
+			key: current-key
+		]
+		art/spec-obj: spec: parse-text-spec spec
+		art/image: image: either spec/area [	;-- won't be needing the whole image; crop it
+			get-image-part
+				spec/image
+				u->p spec/area/offset
+				u->p spec/area/size
+		] [spec/image]
+		art/box: box: get-text-box image
+		check-alignment box/1 box/2 image/size spec/h-anchor spec/v-anchor
+	]
+]
 
 
 

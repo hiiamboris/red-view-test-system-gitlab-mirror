@@ -81,6 +81,7 @@ issue/interactive #4239 [
 	"[View] Transparent box turned loose doesn't honor it's parent's offset"
 
 	;; this requires screen- (not window-) shot
+	;; logic: drag the panel, check if there's a box in the expected place
 	wndw: display [			;-- /tight to remove `panel` inner paddings so box doesn't stick out of it
 		origin 5x5
 		panel 320x300 [		;-- contain other stuff inside, so there's always a gap between it and window border - otherwise can't detect a box there
@@ -111,6 +112,9 @@ issue/interactive #4239 [
 issue/layout #4238 [
 	"GTK: draw's box and field background rendering differences between Windows and Linux"
 
+	;; logic: whole field (not just text) should be blue, and of correct size
+	;; text forced upper alignment is a limitation of Windows' native controls - I'm not checking it
+	;@@ TODO: how to check rounding radius?
 	shot: shoot [
 		panel 100x100 red draw [box 0x0 100x100] [
 			fld: field "abc" blue no-border
@@ -120,15 +124,14 @@ issue/layout #4238 [
 	expect [base: box [at shot center middle 100x100 > 70% all red]]
 	expect [fld/size/x > 50]
 	expect [box [at shot/base fld/offset fld/size > 90% all blue]]
-	;; text forced upper alignment is a limitation of Windows' native controls - I'm not checking it
-
-	;@@ TODO: how to check rounding radius?
 ]
 
 ;@@ TODO: #4229 should be covered by base-test - port it
 
 issue/interactive #4226 [
 	"[View] FIELD is not draggable on macOS"
+
+	;; logic: drag field, see if it moved
 	should not error out		;@@ TODO: check worker's (out of order) output for errors
 	w: display [size 200x50 fld: field loose]
 	s1: shoot w
@@ -150,29 +153,36 @@ issue/interactive #4221 [		;-- /interactive to have DISPLAY
 	;; logic: make a semi-transparent window, compare built-in and Red screenshots
 	display [box #FF00FF50]
 	s1: to-image system/view/screens/1
+	log-image s1
 	s2: screenshot
-	expect s1 = s2
+	expect [s1 = s2]
 ]
 
 issue/layout #4212 [
 	"GTK: text face not rendering properly"
 
-	s1: shoot [origin 100x100 text 100 red "test" on-create [face/size: 180x50]]
-	expect box [at s1 100x100 180x50 > 90% all red]
+	variant 1 [
+		;; logic: red text should be resized, not just moved - check for the size of the outline
+		s1: shoot [origin 100x100 text 100 red "test" on-create [face/size: 180x50]]
+		expect [box [at s1 100x100 180x50 > 90% all red]]
+	]
 
-	s2: shoot [origin 100x100 t: text red "test" right]
-	expect b: box [at s2 100x100 t/size > 90% all red]
-	expect text [aligned right in b]
+	variant 2 [
+		;; logic: red text should not be trimmed to text size and alignment applied
+		s2: shoot [origin 100x100 t: text red "test" right]
+		expect [b: box [at s2 100x100 t/size > 90% all red]]
+		expect [text [aligned right in s2/b]]
+	]
 ]
 
 issue/layout #4211 [
 	"Deep reactor works improperly with dynamically created faces"
 
-	;; logic: should copy/deep reactions, including paths
+	;; logic: `react` should copy/deep reactions, including paths - test if paths are copied
 	layout lay: [b: button react [b/text]]		;-- no need to view it
-	expect reaction: react? b 'text
-	expect not same? reaction last lay
-	expect not same? reaction/1 first last lay		;-- check path specifically
+	expect [reaction: react? b 'text]
+	expect [not same? reaction last lay]
+	expect [not same? reaction/1 first last lay]	;-- check path specifically
 ]
 
 ;@@ TODO: #4206 - will fix be granted for it at all?

@@ -376,8 +376,8 @@ eval-results-group: func [
 				/local r
 			][
 				red-log: copy "  Reduction log:"
-				inspect: func [exp [block!] val [any-type!]] [
-					repend red-log ["^/    " pad mold/flat/only exp 30 " => " mold :val]
+				inspect: func [expr [block!] val [any-type!]] [
+					repend red-log ["^/    " pad mold/flat/only/part expr 30 30 " => " mold/flat/part :val 50]
 					:val
 				]
 				set/any 'r trace-deep :inspect expr

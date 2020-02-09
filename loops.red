@@ -26,10 +26,11 @@ for: function [
 	end		[integer!]
 	code	[block!]
 ][
+	incr: pick [1 -1] start <= end
 	set x start
-	loop end - start + 1 compose [
+	loop 1 + abs end - start compose [
 		(code)
-		(to set-word! x) 1 + (x)
+		(to set-word! x) incr + (x)
 	]
 ]
 

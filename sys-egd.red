@@ -113,16 +113,20 @@ Red [
 				pt		[integer!]			;-- point index inside the scan-line
 				i		[integer!]			;-- index
 				is		[integer!]			;-- index of segment
+				lineskip [integer!]			;-- offset to skip a line
 				w		[integer!]			;-- width
 				h		[integer!]			;-- height
 				size	[integer!]			;-- w * h
 				c		[float32!]			;-- contrast
+				ch		[float32!]			;-- contrast horizontal
+				cv		[float32!]			;-- contrast vertical
 				csum	[float32!]			;-- sum of contrasts
 				cs		[float32-ptr!]		;-- contrasts list
 				cp		[float32-ptr!]		;-- pointer to contrasts list
-				cp1		[float32-ptr!]		;--  LL MM RR    LL->MM contrast    it goes with this figure over the whole image
-				cp2		[float32-ptr!]		;--     DD       MM->RR contrast    comparing MM->DD with maximum of LL->MM and MM->RR
-				cp3		[float32-ptr!]		;--  (pixels)    MM->DD contrast    thus ensuring contrast gradient is pointed towards DD
+				cp1		[float32-ptr!]		;--     UU       LL->MM contrast    it goes with this figure over the whole image
+				cp2		[float32-ptr!]		;--  LL MM RR    MM->RR contrast    comparing max of MM->DD & UU->MM with max of LL->MM & MM->RR
+				cp3		[float32-ptr!]		;--     DD       UU->MM contrast    thus ensuring contrast gradient is pointed towards DD or UU
+				cp4		[float32-ptr!]		;--  (pixels)    MM->DD contrast    (UU is for symmetry, otherwise edge detection works worse in one direction)
 				s		[integer!]			;-- start of the segment (0-based)
 				s1		[integer!]			;-- ..of segment 1
 				s2		[integer!]			;-- ..of segment 2
@@ -144,23 +148,27 @@ Red [
 			segcs: as float32-ptr! allocate size * (size? float32!) / 2 + 1		;-- segments mean contrast list
 			cs/1: zero32  cs/w: zero32					;-- marginal contrasts are undefined
 			
-			;; init pointers to pixels of a T-shape
+			;; init pointers to pixels of a cross-shape
 			either vertical? [
-				cp1: imdt/v-contrasts
+				cp1: imdt/v-contrasts + 1
 				cp2: cp1 + w
 				cp3: imdt/h-contrasts + w
-				nlines:  w - 1
+				cp4: cp3 + 1
+				nlines:  w - 2
 				npoints: h - 2
+				lineskip: w
 			][
-				cp1: imdt/h-contrasts
+				cp1: imdt/h-contrasts + w
 				cp2: cp1 + 1
 				cp3: imdt/v-contrasts + 1
-				nlines:  h - 1
+				cp4: cp3 + w
+				nlines:  h - 2
 				npoints: w - 2
+				lineskip: 1
 			]
 
 			;; loop over all scan-lines
-			ln: 0 loop nlines [
+			ln: 1 loop nlines [
 				ln: ln + 1
 				sp: segs
 				s: -1	;-- <0 when out of segment
@@ -168,12 +176,12 @@ Red [
 				scsp: segcs
 				csum: zero32
 				;; collect segments of subsequent edge points inside scan-line
-				pt: 0 loop npoints [
+				pt: 1 loop npoints [
 					pt: pt + 1
-					i: either vertical? [w][1]
-					i: pt - 1 * i + 1
-					c: either cp2/i >= cp1/i [cp2/i][cp1/i]
-					c: cp3/i - c
+					i: pt - 2 * lineskip + 1
+					ch: either cp2/i >= cp1/i [cp2/i][cp1/i]
+					cv: either cp4/i >= cp3/i [cp4/i][cp3/i]
+					c: cv - ch
 					if c < zero32 [c: zero32]
 					cs/pt: c
 
@@ -211,10 +219,12 @@ Red [
 					cp1: cp1 + 1
 					cp2: cp2 + 1
 					cp3: cp3 + 1
+					cp4: cp4 + 1
 				][
 					cp1: cp1 + w
 					cp2: cp2 + w
 					cp3: cp3 + w
+					cp4: cp4 + w
 				]
 				
 				;; ===  unite the segments now (should I also grow them? it'll be slower likely)  ===
@@ -257,9 +267,9 @@ Red [
 						; probe [segcs/is ": " ln + 1 " " sp/1 + 1 "-" sp/2]
 						assert segcs/is <= as float32! 1.0
 						percent/rs-make-at ALLOC_TAIL(into) as float! segcs/is
-						integer/make-in into ln + 1
-						integer/make-in into sp/1 + 1
-						integer/make-in into sp/2
+						integer/make-in into ln
+						integer/make-in into sp/1
+						integer/make-in into sp/2 - 1
 					]
 					is: is + 1
 					sp: sp + 2

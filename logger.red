@@ -16,9 +16,11 @@ log: function [lvl [integer!] "0 = critical, 1 = warning, 2 = info, 3 = trace" m
 	]
 ]
 
-log-artefact: log-artifact: function [art [object!]] [
+log-artefact: log-artifact: func [art [object!]] [
 	append message-log art
 ]
+
+log-image: func [im [image!]] [log-artifact object [type: 'image image: im key: current-key]]
 
 panic:  log-crit:  func [msg [string!]] [log 0 rejoin ["CRITICAL: " msg]]
 warn:   log-warn:  func [msg [string!]] [log 1 rejoin ["WARNING: " msg]]

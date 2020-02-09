@@ -11,16 +11,45 @@ boxes-ctx: context [
 		find-boxes* edges/1 edges/2
 	]
 
+	set 'check-alignment function [
+		"Verify if box XY1-XY2 inside TOTAL size is aligned according to given anchors"
+		xy1 [pair!] xy2 [pair!] total [pair!] h-anchor [word! none!] v-anchor [word! none!]
+	][
+		;; center requires balance of low and high margin
+		;; low / high require closeness to the edge
+		mo: 6 * system/view/metrics/dpi / 96	;-- anchors 'max offset': how far from the edge box can be located
+		plo: abs xy1  phi: abs total - xy2		;-- paddings: low (left/top), high (right/bottom)
+		oc: abs xy1 + xy2 - total				;-- asymmetry - double offset of box center from the area center
+		all [
+			h-anchor
+			any switch h-anchor [
+				left   [[plo/x > mo  phi/x - plo/x < mo]]		;-- too far from left, closer or relatively equidistant to right
+				center [[oc/x > mo]]							;-- not symmetrically placed around center
+				right  [[phi/x > mo  plo/x - phi/x < mo]]		;-- too far from right, closer or relatively equidistant to left
+			]
+			return no
+		]
+		all [
+			v-anchor
+			any switch v-anchor [
+				top    [[plo/y > mo  phi/y - plo/y < mo]]		;-- too far from top, closer or relatively equidistant to bottom
+				middle [[oc/y > mo]]							;-- not symmetrically placed around center
+				bottom [[phi/y > mo  plo/y - phi/y < mo]]		;-- too far from bottom, closer or relatively equidistant to top
+			]
+			return no
+		]
+		yes
+	]
+
 	set 'find-box function [
 		"Look for a box of specific SIZE in BOXES; return the best matching box"
 		boxes [block!] size [pair!]
 		/anchors
-			h-anchor [word!]
-			v-anchor [word!]
+			h-anchor [word! none!]
+			v-anchor [word! none!]
 			total [pair!] "Total area size (for anchors)"		;@@ TODO: this is ugly
 	][
 		max-mismatch:   5			;-- how far box size (x/y) can go off from the requested one (pixels)
-		mo: max-offset: 6			;-- anchors: how far from the edge box can be located
 		abs: :absolute
 		best: reduce [max-mismatch + 1 0.0 none none]
 		foreach [prob xy1 xy2] boxes [
@@ -30,21 +59,10 @@ boxes-ctx: context [
 				mismatch > best/1									;-- a better match is already found
 				all [mismatch = best/1  prob <= best/2]				;-- equal match of better probability is already found
 			] [continue]
-			if anchors [			;-- check alignment
-				;; center requires balance of low and high margin
-				;; low / high require closeness to the edge
-				plo: abs xy1  phi: abs total - xy2		;-- paddings: low (left/top), high (right/bottom)
-				oc: abs xy1 + xy2 - total				;-- asymmetry - double offset of box center from the area center
-				if any switch h-anchor [
-					left   [[plo/x > mo  phi/x - plo/x < mo]]		;-- too far from left, closer or relatively equidistant to right
-					center [[oc/x > mo]]							;-- not symmetrically placed around center
-					right  [[phi/x > mo  plo/x - phi/x < mo]]		;-- too far from right, closer or relatively equidistant to left
-				] [continue]
-				if any switch v-anchor [
-					top    [[plo/y > mo  phi/y - plo/y < mo]]		;-- too far from top, closer or relatively equidistant to bottom
-					middle [[oc/y > mo]]							;-- not symmetrically placed around center
-					bottom [[phi/y > mo  plo/y - phi/y < mo]]		;-- too far from bottom, closer or relatively equidistant to top
-				] [continue]
+			all [
+				anchors
+				not check-alignment xy1 xy2 total h-anchor v-anchor
+				continue
 			]
 			repend clear best [mismatch prob xy1 xy2]
 		]
@@ -272,6 +290,19 @@ boxes-ctx: context [
 	assert [0%   = string-fitness? "www"]
 	assert [50%  > string-fitness? "!!!j!!!"]
 
+	set 'get-background-color function [im [image!]] [
+		max-fill: 0
+		vsets: clear []
+		repeat x im/size/x [
+			append/only vsets cs: get-vline-colorset im x
+			if cs/2 > max-fill [set [bgnd max-fill] cs]			;-- background color is the one with longest line
+			if max-fill = im/size/y [break]						;-- found it
+		]
+		if max-fill < (90% * im/size/y) [return none]			;-- result is too unreliable to be used ;@@ TODO: 70%? 90%? 100%?
+		;; another way is to choose background as > 50% of area, or the most prevalent color - but probably makes less sense
+		bgnd
+	]
+
 	;@@ TODO: maybe make some boxes lower (to distinguish upper/lower case letters)
 	;; should I provide xy1,xy2? or just crop the image?
 	set 'find-glyph-boxes function [im [image!] /local bgnd x1 x2] [
@@ -325,6 +356,58 @@ boxes-ctx: context [
 			as-pair x1 y-range/1
 			as-pair any [x2 im/size/x] y-range/2		;-- `any` in case a box began but never ended
 		]]
+	]
+
+	hsets-of: function [im [image!]] [
+		also hsets: copy []
+			repeat x im/size/y [append/only hsets get-hline-colorset im x]
+	]
+
+	vsets-of: function [im [image!]] [
+		also vsets: copy []
+			repeat y im/size/x [append/only vsets get-vline-colorset im y]
+	]
+
+	;@@ TODO: maybe enhance this that it actually looks for text-specific properties (line thickness, kerning..), not just counts pixels?
+	set 'get-text-box function [
+		"Return the text box dimensions [xy1 xy2] of a text on an image IM"
+		im [image!] /local bgnd x1 x2
+	][
+		min-contrast: 20%										;-- below this - treat pixel as background (20% seems best)
+
+		max-fill: 0
+		vsets: vsets-of im
+		foreach cs vsets [
+			if cs/2 > max-fill [set [bgnd max-fill] cs]			;-- background color is the one with longest line
+			if max-fill = im/size/y [break]						;-- found it
+		]
+		if max-fill < (90% * im/size/y) [return copy []]		;-- result is too unreliable to be used ;@@ TODO: 70%? 90%? 100%?
+		;; another way is to choose background as > 50% of area, or the most prevalent color - but probably makes less sense
+		;@@ TODO: or maybe use both metrics and if they don't match - issue a warning
+
+		hsets: hsets-of im
+
+		y-range: 1x1
+		x-range: 1x1
+		foreach [i1 i2 sets dst] compose [
+			1 (length? hsets) hsets y-range/1
+			(length? hsets) 1 hsets y-range/2
+			1 (length? vsets) vsets x-range/1
+			(length? vsets) 1 vsets x-range/2
+		] [
+			for i i1 i2 [
+				occupied?: no
+				foreach [clr amnt] pick get sets i [
+					if occupied?: min-contrast <= contrast clr bgnd [break]
+				]
+				if occupied? [set dst i break]
+			]
+		]
+
+		reduce [
+			as-pair x-range/1 y-range/1
+			as-pair x-range/2 y-range/2
+		]
 	]
 
 	; ;@@ TODO: always test fonts separation for used fonts?
