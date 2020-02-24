@@ -53,14 +53,16 @@ log-review: function [] [	;; report errors if any
 		artstrings: map-each [x] arts [rejoin [attempt [x/key] ": " replace/all form/part x 50 #"^/" #" "]]
 		set 'message-log tail message-log
 		view/options [
-			area font-name "Lucida Console" wrap 500x500 with [text: form reverse msgs]
+			area font-name "Lucida Console" wrap 500x500 with [text: form msgs]
+			; area font-name "Lucida Console" wrap 500x500 with [text: form reverse msgs]
 			below
 			text "Artifacts:"
 			tl: text-list 300x450 data artstrings on-dbl-click [
 				if art: pick arts event/picked [explore-artifact art]
 			]
 			button "OK" focus [unview/only event/window]
-		] [text: "(Reversed) error log"]
+		] [text: "Error log"]
+		; ] [text: "(Reversed) error log"]
 	]
 	;; @@ TODO: browse artifacts
 ]
