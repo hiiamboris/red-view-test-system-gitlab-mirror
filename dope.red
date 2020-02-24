@@ -9,14 +9,23 @@ random/seed now/precise
 #include %debug.red
 #include %assert.red
 #include %clock.red
+#include %composite.red
 #include %loops.red
 #include %relativity.red
 #include %logger.red
-#include %composite.red
+#include %proc-win32.red
 
 abs: :absolute
 
 with: func [ctx [object! any-function!] code [block!]] [bind code :ctx]
+
+once: func [
+	"Set value of W to V only if it's unset"
+	:w [set-word!]
+	v [default!]
+][
+	unless value? to word! w [set w :v]
+]
 
 ;; using set-word makes it collected by the `function` and visually distinguishable
 default: func [
@@ -38,6 +47,25 @@ hamming: func [
 	1.0 * n / len
 ]
 
+mold-part: function [
+	"Visually better (esp. in sentences) mold/part with ellipsis and a closing bracket"
+	value [any-type!]
+	limit [integer! series!]
+	/flat "Exclude all indentation"
+	/only "Exclude outer brackets if value is a block"
+][
+	p: copy 'mold/part
+	foreach w [flat only] [if get w [append p w]]
+	r: do compose [(p) :value limit]
+	all [
+		not only
+		any [any-object? :value block? :value]
+		#"]" <> last r
+		change skip tail r -4 "...]"
+	]
+	r
+]
+
 vec-length?: func [
 	"Compute length of vector (X,Y)"
 	xy [pair!]
@@ -56,17 +84,19 @@ min+max: func [
 ]
 
 
-stack-friendly: func [
-	"Prefix a function defined in a context to make it visible in stack trace"
-	:w [set-word!]
-	v [default!]
-][
-	set in system/words to word! w does [ERROR "DO NOT CALL (to word! w) DIRECTLY"]
-	set w :v
-]
+stack-friendly: func [:w [set-word!] v [default!]][set w :v]	;@@ TODO: remove it
+
+; stack-friendly: func [
+; 	"Prefix a function defined in a context to make it visible in stack trace"
+; 	:w [set-word!]
+; 	v [default!]
+; ][
+; 	set in system/words to word! w does [ERROR "DO NOT CALL (to word! w) DIRECTLY"]
+; 	set w :v
+; ]
 
 
-;@@ BUG: this diverts return & exit (but bind-only is too slow to use here)
+;@@ BUG: this diverts return & exit (but bind-only is too slow to use here); also probably break/continue-sensitive
 trace: func [
 	"Evaluate each expression in CODE and pass it's result to the INSPECT function"
 	inspect	[function!] "func [result [any-type!] next-code [block!]]"
@@ -258,7 +288,7 @@ where's-my-error?: func [
 	pos: code
 	f: func [_ [any-type!] p][pos: p]
 	if error? e: try [set/any 'r trace :f code  'ok] [
-		print [e "^/*** Stuck at:" mold/part pos 100]
+		print [e "^/*** Stuck at:" mold-part pos 100]
 		halt
 	]
 	:r
@@ -269,6 +299,30 @@ where's-my-error?: func [
 	clear change ss reduce ['where's-my-error? copy next ss]
 	ss
 ]
+
+
+;; experimental hybrid of `guard` and `where's-my-error?`
+trace-using: function [
+	"Execute CODE, exposing a set of DEFINITIONS (word: expression) to it and reporting where it stuck on error"
+	code		[block!]
+	definitions	[block!]
+	/local res err
+][
+	unset 'res
+	pos: code
+	upd: func [_ [any-type!] p][pos: p]
+	fun: function [] compose [			;@@ BUG: unfortunately, this binds 'local as well and traps return/exit
+		(definitions)
+		if error? set 'err try [set/any 'res trace :upd code  'ok] [
+			clear find err: form err #"^/"		;-- extract only the 1st string
+			panic #composite "(err)^/*** During execution of: (mold-part pos 100)"
+		]
+		:res
+	]
+	bind code :fun
+	fun
+]
+
 
 clock-each: function [
 	"Display execution time of each expression in CODE"
@@ -324,10 +378,11 @@ num-format: function [num [float! integer!] integral [integer!] frac [integer!] 
 guard: func [
 	"Evaluate CODE logging the error if it happens"
 	code [block!]
+	/blame code-2 [block! none!] "Blame this piece of code instead"
 	/local e r
 ][
 	if error? e: try [set/any 'r do code  'ok] [
-		panic #composite "Internal error:^/(form e)^/during execution of (mold/part code 100)"
+		panic #composite "Internal error:^/(form e)^/during execution of (mold-part any [code-2 code] 100)"
 	]
 	:r
 ]
@@ -337,35 +392,54 @@ guard: func [
 scope: func [
 	"Evaluate CODE, catch and log any error, but do a cleanup regardless"
 	code [block!] "May contain LEAVING [cleanup code...] directives"
+	/blame code-2 [block! none!]
 	/local e cleaners leaving
 ][
 	cleaners: copy []
 	leaving: func [expr [block!]] [insert cleaners expr]	;-- `insert` to run them in the reverse the order
 	bind-only code: copy/deep code 'leaving
-	also guard code
+	also guard/blame code code-2
 		do cleaners
 ]
 
 
-current-key: function [/push newkey [string! none!] /back] [
-	stk: []
-	case [
-		push [append stk newkey]
-		back [take/last stk]
-	]
-	last stk
+make-context-for: function [code [block!]] [
+	; code: copy/deep code
+	sw: collect-set-words code
+	ctx: context compose [(sw) none]
+	bind-only code bind sw ctx
+	reduce [code ctx]
 ]
+
+eval-part: function [
+	"Evaluate CODE until it's tail or it throws a STOP signal; returns CODE at next non-evaluated position"
+	code [block!] "CODE must be bound in a way that intermediate results survive between evaluations"
+	/key id [string!] "Specify an identifier to mark produced artifacts with"
+	/local r
+][
+	inspect: func [result [any-type!] next-code] [code: next-code]
+	scope/blame [
+		current-key/push id
+		leaving [current-key/back]
+		catch/name [trace :inspect code] 'stop
+	] code
+	code		;-- empty? can be used to check if it's done or not
+]
+
+stop-here: func ["Throw a STOP signal for eval-path"][throw/name none 'stop]
 
 ;@@ BUG: unfortunately this traps return/exit
 eval-results-group: func [
 	"Evaluate code using EXPECT, PARAM, PARAM-EXACT functions to test certain results"
 	body	[block!]
 	/key id	[string!] "Specify an identifier to mark produced artifacts with"
+	/local results-wrapper
 ][
 	scope [
 		current-key/push id
 		leaving [current-key/back]
-		do-using body [									;-- need a context for these words
+		trace-using body [									;-- need a context for these words
+		; results-wrapper: function [] compose [			;-- make all set-words there local
 			group: either string? :body/1 [body/1]["GLOBAL"]
 			group-key: does [id]
 
@@ -377,14 +451,18 @@ eval-results-group: func [
 			][
 				red-log: copy "  Reduction log:"
 				inspect: func [expr [block!] val [any-type!]] [
-					repend red-log ["^/    " pad mold/flat/only/part expr 30 30 " => " mold/flat/part :val 50]
+					repend red-log ["^/    " pad mold-part/flat/only expr 20 20 " => " mold-part/flat :val 35]
 					:val
 				]
-				set/any 'r trace-deep :inspect expr
+				e: try/all [set/any 'r trace-deep :inspect expr 'ok]
 				; set/any 'r do expr
-				either any [unset? :r not :r]
-					[panic  #composite "(group): (mold expr) check failed with (:r)^/(red-log)"]
-					[inform #composite "(group): (mold expr) check succeeded"]
+				case [
+					error? e
+						[panic  #composite "(mold expr) errored out with^/(:e)"]
+					any [unset? :r not :r]
+						[panic  #composite "(mold expr) check failed with (:r)^/(red-log)"]
+					'ok	[inform #composite "(mold expr) check succeeded"]
+				]
 				none
 			]
 
@@ -393,17 +471,17 @@ eval-results-group: func [
 			param-exact: function [expr [block!] expected [any-type!] /blame culprits [block!] /local val] [
 				set/any 'val do expr
 				either not equal? :val :expected
-					[panic  #composite "(group): (mold expr) yielded (:val), the only acceptable result is (:expected)"
+					[panic  #composite "(mold expr) yielded (:val), the only acceptable result is (:expected)"
 if blame [foreach evil culprits [? (get evil)]]		;@@ TODO!!
 					]
-					[inform #composite "(group): (mold expr) yielded an acceptable (:val)"]
+					[inform #composite "(mold expr) yielded an acceptable (:val)"]
 			]
 
 			stack-friendly
 			param: function [expr [block!] expected [block!] /blame culprits [block!] /local val crit-lo crit-hi warn-lo warn-hi ideal] [
 				set/any 'val do expr
 				unless number? :val [
-					panic #composite "(group): (mold expr) should have returned a number, not (mold :val)"
+					panic #composite "(mold expr) should have returned a number, not (mold :val)"
 					exit
 				]
 				if float? val   [val: round/to val 0.0001]
@@ -417,21 +495,24 @@ if blame [foreach evil culprits [? (get evil)]]		;@@ TODO!!
 					set msg opt string!
 				]
 				default msg: [""]
-				panic-if [not parsed?] #composite "(group): invalid expectations block: (mold expected)"
+				panic-if [not parsed?] #composite "invalid expectations block: (mold expected)"
 				case [
 					any [val < crit-lo  val > crit-hi] [
-						panic #composite "(group): (mold expr) yielded (val), outside critical range: (crit-lo) to (crit-hi). (msg)"
+						panic #composite "(mold expr) yielded (val), outside critical range: (crit-lo) to (crit-hi). (msg)"
 if blame [foreach evil culprits [? (get evil)]]
 					]
 					any [val < warn-lo  val > warn-hi] [
-						warn #composite "(group): (mold expr) yielded (val), expected to be in range: (warn-lo) to (warn-hi). (msg)"
+						warn #composite "(mold expr) yielded (val), expected to be in range: (warn-lo) to (warn-hi). (msg)"
 					]
 					'normally [
-						inform #composite "(group): (mold expr) yielded (val), ideally should be (ideal)"
+						inform #composite "(mold expr) yielded (val), ideally should be (ideal)"
 					]
 					;@@ TODO: use ideal value for rating computation
 				]
 			]
+
+			; (body)
 		]
+		; results-wrapper
 	]
 ]

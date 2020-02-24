@@ -19,7 +19,25 @@ context [
 		window [object!]
 	][
 		#assert [any [handle? window/state/1 integer? window/state/1]]
-		get-window-borders window/state/1
+		#assert ['window = window/type]
+		get-window-borders* window/state/1
+	]
+
+	set 'window-size-of func [
+		"Get precise size (in pixels) of a window face"
+		window [object!]
+	][
+		#assert [any [handle? window/state/1 integer? window/state/1]]
+		#assert ['window = window/type]
+		get-window-size* window/state/1
+	]
+
+	set 'client-offset-of func [
+		"Get FACE's client area offset on a screen (in pixels)"
+		face [object!]
+	][
+		#assert [any [handle? face/state/1 integer? face/state/1]]
+		get-client-offset* face/state/1
 	]
 
 	translate: func [
@@ -37,8 +55,8 @@ context [
 		xy
 	]
 
-	set 'units-to-pixels func [xy [pair!]] [xy * system/view/metrics/dpi / 96]
-	set 'pixels-to-units func [xy [pair!]] [xy * 96 / system/view/metrics/dpi]
+	set 'units-to-pixels func [xy [pair! integer!]] [xy * system/view/metrics/dpi / 96]
+	set 'pixels-to-units func [xy [pair! integer!]] [xy * 96 / system/view/metrics/dpi]
 
 	set 'face-to-window func [
 		"Translate a point in face space into window space"
@@ -61,8 +79,8 @@ context [
 	][
 		; nonclient-size? + translate xy face :+
 		either real
-			[ (units-to-pixels xy) + get-client-offset face/state/1 ]
-			[ xy + pixels-to-units get-client-offset face/state/1 ]
+			[ (units-to-pixels xy) + client-offset-of face ]
+			[ xy + pixels-to-units client-offset-of face ]
 	]
 
 	set 'screen-to-face func [
@@ -72,8 +90,8 @@ context [
 	][
 		; (translate xy face :-) - nonclient-size?
 		either real
-			[ pixels-to-units xy - get-client-offset face/state/1 ]
-			[ xy - pixels-to-units get-client-offset face/state/1 ]
+			[ pixels-to-units xy - client-offset-of face ]
+			[ xy - pixels-to-units client-offset-of face ]
 	]
 
 	set 'face-to-face func [

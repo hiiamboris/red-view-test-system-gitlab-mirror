@@ -76,7 +76,8 @@ grab-screenshot*: routine [
 		w [integer!] h [integer!] x [integer!] y [integer!]
 		scrdc [handle!] gpdc [integer!]
 		gfx [integer!] gpimg [integer!]
-		img [red-image!] p [red-pair!]
+		img [red-image!] p [red-pair!] inode [img-node!]
+		new? [logic!]
 ][
 	x: 0 y: 0
 	if TYPE_OF(offset) = TYPE_PAIR [
@@ -95,12 +96,15 @@ grab-screenshot*: routine [
 
 	scrdc: GetDC null
 
-	either TYPE_OF(into) = TYPE_IMAGE [
-		img: as red-image! into
-		gpimg: as-integer img/node
-	][
+	new?: TYPE_OF(into) <> TYPE_IMAGE
+	either new? [
 		gpimg: 0
 		GdipCreateBitmapFromScan0 w h 0 PixelFormat32bppARGB null :gpimg
+		img: image/init-image  as red-image! stack/push*  OS-image/make-node as node! gpimg
+	][
+		img: as red-image! into
+		inode: as img-node! (as series! img/node/value) + 1
+		gpimg: inode/handle
 	]
 
 	gfx: 0
@@ -110,8 +114,6 @@ grab-screenshot*: routine [
 	GdipGetDC gfx :gpdc
 	BitBlt as handle! gpdc 0 0 w h scrdc x y 40CC0020h	;-- CAPTUREBLT | SRCCOPY -- former for layered windows capture!
 	GdipReleaseDC gfx gpdc
-
-	img: image/init-image  as red-image! stack/push*  as handle! gpimg
 	ReleaseDC null scrdc
 
 	as red-image! stack/set-last as cell! img

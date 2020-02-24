@@ -54,10 +54,10 @@ simulator: context [
 
 	word-to-vk: func [w [word!]] [
 		w: switch/default w [
-			shift			[VK_LSHIFT]
-			ctrl control	[VK_LCONTROL]
-			alt menu		[VK_LMENU]
-			enter return	[VK_RETURN]
+			shift			['VK_LSHIFT]
+			ctrl control	['VK_LCONTROL]
+			alt menu		['VK_LMENU]
+			enter return	['VK_RETURN]
 			;@@ need more?
 		][w]
 		assert [find/match form w "VK_"  'w]

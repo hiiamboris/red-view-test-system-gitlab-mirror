@@ -4,7 +4,6 @@ Red [
 	license: 'BSD-3
 ]
 
-
 ;@@ TODO: make an escape mechanism? although, it's already there: ("(") (")") (")))((()()("), but can be shorter perhaps?
 ;@@ TODO: should composite support comments? e.g. `(;-- comments)`, if so - how should it count braces?
 ;@@ TODO: should composite expand "(#macros)" ?

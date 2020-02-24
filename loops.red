@@ -35,6 +35,29 @@ for: function [
 ]
 
 
+while-waiting: function [
+	"Do BODY periodically until TIME runs out or COND evaluates to false"
+	time [time! integer! float! none!] "Returns NONE when TIME hits"
+	cond [block!] "Returns TRUE when COND is false"
+	body [block!]
+][
+	if number? time [time: to time! time]
+	t1: now/time/precise
+	while cond [
+		if time [
+			t2: now/time/precise
+			dt: t2 - t1 + 24:00 % 24:00
+			if dt >= time [return none]
+		]
+		do body
+		wait 0.01
+	]
+	yes
+]
+
+
+
+
 ;@@ BUG: this turns return/exit/break/continue into errors (when not caught) - they should be rethrown separately using their natives
 selective-catch: func [
 	"Evaluate CODE and return errors of given TYPE & ID only, while rethrowing all others"
@@ -80,6 +103,7 @@ forparse: func [
 for-each: function [
 	'spec [word! block!] series [series!] code [block!]
 	/reverse "Traverse in the opposite direction"
+	/stride "Lock step at 1 (or -1 for reverse) and always include all SPEC words"
 ][
 	if empty? series [exit]				;-- optimization
 
@@ -136,12 +160,22 @@ for-each: function [
 	r: none
 	;@@ CRAP! so much fighting involved due to series offset being limited to 1..length ARGH!
 	either reverse [
-		index: (length? series) - 1 / step * step + 1		;-- align to current offset rather than the tail
-		step: 0 - step
+		either stride [
+			index: (length? series) - step + 1
+			step: -1
+		][
+			index: (length? series) - 1 / step * step + 1		;-- align to current offset rather than the tail
+			step: 0 - step
+		]
 		stop: 0
 	][
 		index: 1
-		stop: 1 + length? series		;@@ this fixes length; if it's building up - won't be accounted for
+		either stride [
+			stop: (length? series) - step + 2
+			step: 1
+		][
+			stop: 1 + length? series		;@@ this fixes length; if it's building up - won't be accounted for ;@@ TODO: allow growing up
+		]
 	]
 	; advance: does compose [series: skip (to set-word! pos) series (step)]
 	advance: does compose [

@@ -26,6 +26,18 @@ Red [
 ; 	]
 ; ]
 
+collect-set-words: function [
+	"Deeply collect set-words from a block of code"
+	code	[block!]
+][
+	parse code rule: [collect any [
+		ahead [block! | paren!] into rule
+	|	keep set-word!
+	|	skip
+	]]
+]
+
+
 ;-- non-strict: rebinds any word type
 bind-only: function [
 	"Selective bind"

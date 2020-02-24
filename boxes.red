@@ -4,6 +4,14 @@ Red [
 	license: 'BSD-3
 ]
 
+
+{
+	BOX formats:
+	found glyphs:     [xy1 xy2 ..]
+	boxes from edges: [probability xy1 xy2 ..]
+	box dialect result (not here): object [size: .. offset: ..  ...]
+}
+
 boxes-ctx: context [
 	;@@ TODO: R/S version? this one takes 0.5 sec; up to 10 sec!!
 
@@ -408,6 +416,64 @@ boxes-ctx: context [
 			as-pair x-range/1 y-range/1
 			as-pair x-range/2 y-range/2
 		]
+	]
+
+
+	min+max-glyph-distance: function [boxes [block!] /local e1] [
+		#assert [even? length? boxes]
+		set [_ e1] boxes
+		min-dist: 1e10
+		max-dist: -1
+		foreach [s2 e2] skip boxes 2 [
+			min-dist: min min-dist dist: s2/x - e1/x
+			max-dist: max max-dist dist
+			e1: e2
+		]
+		reduce [min-dist max-dist]
+	]
+
+	set 'min-glyph-distance function [boxes [block!]] [
+		r: first min+max-glyph-distance boxes
+		all [r < 1e10  pixels-to-units r]
+	]
+
+	set 'max-glyph-distance function [boxes [block!]] [
+		r: second min+max-glyph-distance boxes
+		all [r >= 0  pixels-to-units r]
+	]
+
+
+	min+max-glyph-size: function [boxes [block!]] [
+		#assert [even? length? boxes]
+		min-area: 1e10
+		max-area: -1
+		min-size: max-size: none
+		foreach [s e] boxes [
+			size: e - s
+			area: size/x * size/y
+			if area < min-area [min-area: area  min-size: size]
+			if area > max-area [max-area: area  max-size: size]
+		]
+		reduce [min-size max-size]
+	]
+
+	set 'min-glyph-size function [boxes [block!]] [
+		pixels-to-units first min+max-glyph-size boxes
+	]
+
+	set 'max-glyph-size function [boxes [block!]] [
+		pixels-to-units second min+max-glyph-size boxes
+	]
+
+	set 'equally-sized? function [boxes [block!]] [
+		assert [not empty? boxes]		;-- undefined for that
+		set [s e] boxes
+		size: e - s
+		foreach [s e] skip boxes 2 [
+			ds: absolute e - s - size
+			if 2 < max ds/x ds/y [return no]		;@@ OK to have 2px difference?
+		]
+		yes
 	]
 
 	; ;@@ TODO: always test fonts separation for used fonts?

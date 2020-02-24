@@ -5,7 +5,7 @@ Red [
 ]
 
 
-get-client-offset: routine [
+get-client-offset*: routine [
 	"Returns the offset (in pixels) of the 0x0 client area coordinate of the window"
 	hwnd [any-type!] "handle! or integer!"	;-- both have /value as 3rd integer (integer is a hack due to handle being unloadable)
 	return: [pair!]
@@ -20,7 +20,7 @@ get-client-offset: routine [
 	as red-pair! stack/set-last as cell! pair/push 0 - p/x 0 - p/y
 ]
 
-get-window-borders: routine [
+get-window-borders*: routine [
 	"Returns thickness (in pixels) of Left x Top & Right x Bottom borders (including title bar & menu)"
 	hwnd [any-type!] "handle! or integer!"	;-- both have /value as 3rd integer (integer is a hack due to handle being unloadable)
 	return: [block!]

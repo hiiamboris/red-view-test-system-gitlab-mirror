@@ -5,6 +5,13 @@ Red [
 ]
 
 #system [
+	RECT_STRUCT: alias struct! [
+		left		[integer!]
+		top			[integer!]
+		right		[integer!]
+		bottom		[integer!]
+	]
+
 	#import [
 		"user32.dll" stdcall [
 			SetForegroundWindow: "SetForegroundWindow" [
@@ -16,6 +23,11 @@ Red [
 				gaFlags		[integer!]
 				return:		[handle!]
 			]
+			GetWindowRect: "GetWindowRect" [
+				hWnd		[handle!]
+				lpRect		[RECT_STRUCT]
+				return:		[integer!]
+			]
 		]
 	]
 ]
@@ -25,6 +37,16 @@ activate*: routine [
 	/local h
 ][
 	h: as red-handle! hwnd
-	setforegroundwindow getancestor as handle! h/value 2	;-- GA_ROOT
+	SetForegroundWindow GetAncestor as handle! h/value 2	;-- GA_ROOT
+]
+
+get-window-size*: routine [
+	hwnd [any-type!] "handle! or integer!"	;-- both have /value as 3rd integer (integer is a hack due to handle being unloadable)
+	return: [pair!]
+	/local h rc [RECT_STRUCT value]
+][
+	h: as red-handle! hwnd
+	GetWindowRect as handle! h/value rc
+	as red-pair! stack/set-last as cell! pair/push rc/right - rc/left rc/bottom - rc/top
 ]
 

@@ -190,32 +190,37 @@ issue/layout #4211 [
 issue/interactive #4191 [
 	"GTK: face added to panel's pane appear after exiting event handler, that caused it, instead immediately."
 
-	;; logic: face should be displayed before `showw` returns, so shoot it and check for a red box
-
-	a: make face! [
-	    type: 'base color: red size: 20x20
-
-	    showw: function [
-	        parent [object!]
-	        offs [pair!]
-	    ] [
-	        self/offset: offs
-	        self/parent: parent
-	        append parent/pane self
-	    ]
-	]
+	;; logic: face should be displayed before `showw` returns, so capture it and check for a red box
 
 	display [
+		do [
+			a: make face! [
+			    type: 'base color: red size: 20x20
+
+			    showw: function [
+			        parent [object!]
+			        offs [pair!]
+			    ] [
+			        self/offset: offs
+			        self/parent: parent
+			        append parent/pane self
+			    ]
+			]
+		]
 	    p: panel [
-	        button "show a" [
-	            a/showw face/parent 0x0    ; square appears after wait, not before
-	            shot: shoot p
+	        b: button "show a" [
+	        						;-- need a space (2x2) between panel edge and the box, to detect it
+	            a/showw face/parent 2x2    ; square appears after wait, not before
+	            i: to-image top-window
 	            ; wait 3.0
 	        ]
 	    ]
 	]
+	click b
+	i: sync i
+	shot: capture-face/with p i							;-- get only panel from the window shot
 
-	expect box [at shot 0x0 20x20 100% all red]
+	expect [box [at shot 2x2 20x20 100% all red]]
 ]
 
 issue/compiled/interactive #4190 [
@@ -237,33 +242,43 @@ issue/compiled/interactive #4190 [
 		]
 
 		view [
-		    panel 500x500 [
+			backdrop white
+		    panel 500x500 blue [		;-- colors to make panel visible
 		        button 80x20 "show a" [a/showw face/parent 30x30]
 		    ]
 		]
 	]
 
-	run exe
+	task: run exe
 	settle-down 2 sec
 	scrn: screenshot
 	wndw: find-window-on scrn
-	expect pnl: box [at scrn/wndw bottom 500x500]
-	expect btn: box [within scrn/pnl 80x20]
-	click btn
+	expect [wndw]
+	expect [pnl: box [500x500 within scrn/wndw]]
+	pnl/offset: pnl/offset + wndw/offset		;@@ TODO: complex paths like scrn/wndw/pnl ?
+	expect [btn: box [within scrn/pnl 80x20]]
+	click btn/size / 2 + btn/offset + pnl/offset	;@@ TODO: let boxes carry an absolute offset too!
 	close wndw		;@@ required when window was not created by the worker?
+	;@@ TODO: check the worker output for crash signs
 ]
 
 ;; TODO: #4189 requires console to send the input prompt to stdout so we can check it (see 4241); otherwise, how to test it? OCR? console buffer grabbing (OS dependent)?
 
 issue #4183 [
 	"[CRASH] After using a FONT in DRAW"
-	
 	should not crash
-	execute [
+
+	;; unfortunately, does not crash inside worker's try/all - so have to check the `probe`	output
+	font: none			;-- make it local
+	set/any 'font offload/return [
 		font: make font! [name: system/view/fonts/fixed size: 20]
 		view [box draw [font font text 0x0 "ABC"] rate 1 on-time [unview]]
-		probe font			;-- `probe` destroys the worker
+		probe font			;-- `probe` may crash the worker, but most likely won't, because of `try`
 	]
+	;; `probe` outputs nothing on failure, so `font` will be unset here:
+	expect [object? :font]
+	expect [font/name = system/view/fonts/fixed]
+	expect [font/size = 20]
 ]
 
 ;; TODO: for issues like #4179 - create a special category that will tell that issue is accounted for and should not have tests?
@@ -271,10 +286,10 @@ issue #4183 [
 issue #4171 [
 	"GTK: no error message when trying to `load` non-existent image"
 
-	execute [
+	output: offload/silent [
 		view [image %non-existing-image.png rate 1 on-time [unview]]
 	]
-	expect in output "Access Error: cannot open: %non-existing-image.png"
+	expect [find output "Access Error: cannot open: %non-existing-image.png"]
 ]
 
 ;; TODO: #4163 testable at all?
@@ -282,28 +297,36 @@ issue #4171 [
 issue/interactive #4162 [
 	"[View] `box` in a `panel` is not clipped on W7"
 
+	;; logic: panel/box is bigger than the window, so it will be detected as window
+	;; dragging of the box should not affect the detected window coordinates
 	display [
 		size 200x200
 		at -400x-400 panel 1100x1100 [at 350x350 box loose 300x300 #ff00ff50]
 	]
+	settle-down 1 sec
 	s1: screenshot
 	box1: find-window-on s1
+	expect [box1]
+	param [box1/size/x] [150 < 180 < 200 > 220 > 250]
+
 	drag box1 [left by 300]
 	s2: screenshot
-	box2: find-window-on s2			;@@ TODO: check: `find` should fail when 2 separate 'windows' exist
-	expect box1 = box2
+	box2: find-window-on s2
+	expect [box2]
+	param [box2/size/x] [150 < 180 < 200 > 220 > 250]
+	expect [box1 = box2]
 ]
 
 issue/layout #4158 [
 	"[View] Rich-text tabs can be invisible"
 
-	;; logic: extract glyph boxes, count & check spacing
-	shot: shoot [rich-text data [font ["Verdana" 12] ["IIIIII^-IIIIII^-IIIIII"]]]
+	;; logic: extract glyph boxes, count them & check spacing
+	shot: shoot [backdrop white rich-text data [font ["Verdana" 12] ["IIIIII^-IIIIII^-IIIIII"]]]
 	;@@ TODO: how reliable this specific text is on other platforms, considering other fonts/metrics in use?
-	;@@ should this test specifically pick the text contents so it will fit the size?
-	boxes: glyph-boxes-in shot
-	expect 18 * 2 = length? boxes
-	expect min-glyph-distance boxes + 4 > max-glyph-distance boxes		;@@ 4px is not a tab - how big a tab should be?
+	;@@ should this test try to find such text that will not be tab-spaced?
+	boxes: find-glyph-boxes shot
+	expect [18 * 2 = length? boxes]
+	expect [(min-glyph-distance boxes) + 4 > max-glyph-distance boxes]		;@@ 4px is not a tab - but how big a tab should be?
 ]
 
 issue #4123 [		;-- does not require any windows really
@@ -317,27 +340,37 @@ issue #4123 [		;-- does not require any windows really
 issue #4118 [
 	"running out of memory when MOLDing or FORMing deeply nested face"
 	should not error out
-	takes seconds					;-- let system know that this is a slow test
 
-	layout [foo: base center font-size 0 rate 10 on-time [probe '>>> form face probe '<<< unview]]
-	view make face! [
-	    type: 'window
-	    size: foo/size + 20
-	    pane: reduce collect [loop 100 [keep copy foo]]			;-- will this ever be fixed and how?
-	]
+	;; logic: should be no error in output
+	output: offload/timeout [
+		layout [
+			foo: base center font-size 0 rate 10
+			on-time [face/rate: none probe '>>> form face probe '<<< unview]
+		]
+		view make face! [
+		    type: 'window
+		    size: foo/size + 20
+		    pane: reduce collect [loop 100 [keep copy foo]]			;-- will this ever be fixed and how?
+		]
+	] 0:1:0
 
-	expect output = ">>>^/<<<^/"
+	expect [">>>^/<<<" = trim output]
+	expect [not find output "Error"]
 ]
 
-issue #4116 [
+issue/layout #4116 [
 	"[View] Regression in font application"
 
-	f: make font! [ name: "Verdana" size: 30 ]
-	shot: shoot [ canvas: base 300x150 white draw [font f text 50x50 "OOOOO"]]
-	boxes: glyph-boxes-in shot
-	expect 5 * 2 = length? boxes				;@@ TODO: higher-level tests than this and than glyph-boxes; declarative!!
-	expect equally-sized boxes
-	expect 100x100 < min-glyph-size boxes		;@@ TODO: use the proper glyph size here
+	;; logic: default font glyph size is ~8x9, with 30pt font ~25x29 -- big size means the font is working
+	shot: shoot [
+		backdrop white 
+		do [f: make font! [ name: "Verdana" size: 30 ]]
+		canvas: base 300x150 white draw [font f pen black text 50x50 "OOOOO"]
+	]
+	boxes: find-glyph-boxes shot
+	expect [5 * 2 = length? boxes]				;@@ TODO: higher-level tests than this and than glyph-boxes; declarative!!
+	expect [equally-sized? boxes]
+	expect [within? min-glyph-size boxes 20x20 10x20]	;@@ TODO: how reliable these sizes are across platforms?
 ]
 
 ;; #4113 - needless to test - more than covered by base-test
@@ -352,34 +385,40 @@ issue/compiled/interactive #4104 [
 		]
 	]
 
-	run exe
-	settle-down 2 sec
+	run/output exe %4104out.txt
+	; settle-down 2 sec
 	scrn: screenshot
 	wndw: find-window-on scrn
-	expect btn: box [80x25 within scrn/wndw]	;@@ TODO: make box clearer than this mess!
+	expect [wndw]
+	expect [btn: box [80x25 within scrn/wndw]]
 	click btn
+	wait 0.3
 	close wndw
-	expect output = ":test:^/"
+	output: read %4104out.txt
+	expect [output = ":test:^/"]
 ]
 
-issue/interactive #4069 [
+issue #4069 [
 	"Unexpected error messages in console while running draggable window"
 
-	display/options/flags
-		[h5 red 80x20 "Not frozen more"]
-		[options: [drag-on: 'down]]
-		'no-title
-	expect not in output "Script Error"
+	output: offload [
+		view/options/flags
+			[h5 red 80x20 "Not frozen more" rate 5 on-time [unview]]
+			[options: [drag-on: 'down]]
+			'no-title
+	]
+	expect [not find output "Script Error"]
 ]
 
-issue/compile #4061 [
+issue/compile/interactive #4061 [
 	"[View] Crash & Regression: `do-event` loop stops when calling `unview`"
 
 	variant 1 [	;; null handle
 		;@@ TODO: compile a console with -r -d and run this script, see if console receives focus? or too much effort?
 
-		;; right now I'm just compiling it and checking for null window handle output
-		exe: compile/release/debug [
+		;; right now I'm just compiling it and checking for 'null window handle' output
+		;; logic: compile, run, do clicks, check output for warnings
+		exe: compile/release/debug [		;-- need -d to see the warning in output
 			Red [needs: view]
 			view [
 			    base 300x400 on-alt-down [
@@ -391,20 +430,25 @@ issue/compile #4061 [
 			    ]
 			]
 		]
-		run exe
-		settle-down 2 sec
+		run/output exe %out4061.txt			;@@ TODO: automatically save output? make `exe-output` a reading function?
+		; settle-down 2 sec
 		s1: screenshot
-		wndw: find-window-on s1				;@@ TODO: find-window should try to exclude taskbar-like stuff somehow
-		right-click on wndw
-		left-click  on wndw left + 40
+		expect [wndw: find-window-on s1]
+		click/right wndw
+		click wndw ~at~ [left + 30]		;-- click the big base (which is partly overlapped by the small one)
+		wait 0.1						;-- let it process the click
+		close wndw
+		; wait 0.2							;-- let it process the click
 
 		settle-down 1 sec
 		s2: screenshot
-		expect none? box [s2/wndw]			;-- it should have been disappeared after `unview`
-		expect not in output "WARNING"
+		expect [none? find-window-on s2]			;-- it should have disappeared after `unview`
+		; expect [none? box [s2/wndw]]
+		output: read %out4061.txt
+		expect [not find output "WARNING"]
 	]
 
-	variant 2 [	;; crash
+	variant 2 [	;; crash ;; logic: capture the output, check for an error
 		exe: compile/release/debug [
 			Red [needs: view]
 			view [
@@ -412,36 +456,74 @@ issue/compile #4061 [
 			        view/options
 			        	[ base ]
 			        	[ actors: object [
-			        		on-created: func [f e] [unview/only f]
+			        		on-created: func [f e] [unview/only f]		;-- on-created instead of on-unfocus
 			        	] ]
 			    ]
 			]
 		]
-		run/wait exe
-		expect not in output "Runtime Error"
+		run/output exe %out4061-2.txt
+		scrn: screenshot
+		expect [wndw: find-window-on scrn]
+		click/right wndw
+
+		;; it may crash after right-click: look again
+		settle-down 1 sec
+		scrn: screenshot
+		expect [wndw: box [scrn/wndw]]
+		if wndw [close wndw]
+
+		output: read %out4061-2.txt
+		expect [not find output "Runtime Error"]
 	]
 ]
 
-;@@ TODO: #4045 - test at least color substitution ;; also try box extraction on test2.png
+issue/layout #4045 [
+	"selected item in text-list hard to read (macOS)"
+
+	;; logic: render a text that occupies big area (boxes also minimize ClearType influence)
+	;;  check if text color is the same in both cases
+	s1: shoot [text-list 120x50 font-name "Courier New" data ["█████"] select 1]		;-- "Courier" is very old on W7, has no box glyph
+	s2: shoot [text-list 120x50                         data ["█████"] select 1]
+	expect [tl1: box [120x50 within s1]]
+	expect [tl2: box [120x50 within s2]]
+	b1: any [							;-- try to detect a 'selected line' box
+		box/image [120x10 within s1/tl1]
+		box/image [120x15 within s1/tl1]
+		box/image [120x20 within s1/tl1]
+		box/image [120x25 within s1/tl1]
+	]
+	b2: any [
+		box/image [120x10 within s2/tl2]
+		box/image [120x15 within s2/tl2]
+		box/image [120x20 within s2/tl2]
+		box/image [120x25 within s2/tl2]
+	]
+	expect [b1]
+	expect [b2]
+	cs1: get-colorset b1
+	cs2: get-colorset b2
+	expect [cs1/1 = cs2/1]		;-- same background (cursor color)
+	expect [cs1/3 = cs2/3]		;-- same text color
+]
 
 issue #4044 [
 	"view opening unexpectedly on macOS"
 
-	execute [
+	output: trim offload [
 		win1: layout [
 		    title "Win1"
 		    h1 "test window 1"
-		    rate 1 on-time [unview/only win1 print ["closed win1"]]
+		    rate 5 on-time [unview/only win1 print ["closed win1"]]
 		]
 		win2: layout  [
 		    title "Win2"
 		    h1 "test window 2"
-		    rate 1 on-time [unview/only win2 print ["closed win2"]]
+		    rate 5 on-time [unview/only win2 print ["closed win2"]]
 		]
 		win3: layout  [
 		    title "Win2"
 		    h1 "test window 3"
-		    rate 1 on-time [unview/only win3 print ["closed win3"]]
+		    rate 5 on-time [unview/only win3 print ["closed win3"]]
 		]
 		view win1
 		print ["showing win2"]
@@ -451,7 +533,7 @@ issue #4044 [
 		print "Done"
 	]
 	;; proper order expected here:
-	expect output = "closed win1^/showing win2^/closed win2^/showing win3^/Done"
+	expect [output = "closed win1^/showing win2^/closed win2^/showing win3^/closed win3^/Done"]
 ]
 
 issue/interactive #4039 [
@@ -459,7 +541,9 @@ issue/interactive #4039 [
 	should not crash
 	should not error out
 
-	execute [			;@@ TODO: `execute` should clean up worker's system/words after (and use temporary .red files)
+	;; logic: it swaps panel 1 for panel 2 and button tells which one is shown; click twice, check the output
+	offload [
+		msg: ""
 		panel1: make face! [
 			type: 'panel
 
@@ -467,7 +551,7 @@ issue/interactive #4039 [
 				below
 				text "Panel 1" 
 				button 60x25 "Switch" [
-					print "1 -> 2"
+					append msg "1 -> 2^/"
 					remove find window/pane panel1
 					append window/pane panel2
 				]
@@ -481,33 +565,36 @@ issue/interactive #4039 [
 				below
 				text "Panel 2"
 				button 60x25 "Switch" [
-					print "2 -> 1"
+					append msg "2 -> 1^/"
 					remove find window/pane panel2
 					append window/pane panel1
 				]
 			]
 		]
-
 		window: layout []
 		append window/pane layout/parent panel1/contents panel1 none
 		layout/parent panel2/contents panel2 none
-
-		view window
+		view/no-wait window
+		none			;-- produce less output
 	]
 
 	settle-down 1 sec
 	scrn: screenshot
-	wndw: find-window-on scrn
-	btn: box [60x25 within scrn/wndw]
+	expect [wndw: find-window-on scrn]
+	expect [btn: box [60x25 within scrn/wndw]]
 	click btn
 	wait 1		;; avoid double click
 	click btn
-	expect output = "1 -> 2^/2 -> 1"
+	close wndw
+
+	msg: sync msg		;-- msg must have been updated
+	expect [msg = "1 -> 2^/2 -> 1^/"]
 ]
 
 issue/layout #4006 [
 	"Pen 'OFF in Draw PUSH block turns the Pen off after the PUSH block on MacOS"
 
+	;; logic: make a huge line-width so if pen is off - we know by counting red pixels
 	shot: shoot [		;; coal box vs white backdrop
 	    box 400x400 coal draw [
 	    	line-width 10
@@ -522,15 +609,20 @@ issue/layout #4006 [
 	        box 50x50 340x340
 	    ]
 	]
-	param [amount-of [red on shot]] [70% < 80% < 90% > 100% > 100%]		;@@ TODO: insert proper amount here
+	param [amount-of [red on shot]] [7% < 8% < 10% > 11% > 12%]		;-- 9.5% ideally, pen off if 3%
 ]
 
-issue/compile #4005 [
+issue/compile/interactive #4005 [
 	"[View] regression in Windows backend"
 
+	;; logic: it should just show 'alert' window
 	exe: compile/release/debug [Red [Needs: View] alert "test"]
-	run/wait exe
-	expect not in output "Runtime Error"	;@@ TODO: make a higher level test from this thing
+	run/output exe %4005out.txt
+	scrn: screenshot
+	expect [wndw: find-window-on scrn]
+	close wndw
+	output: read %4005out.txt						;@@ TODO: auto output capture
+	expect [not find output "Runtime Error"]	;@@ TODO: make a higher level test from this?
 ]
 
 issue/interactive #3980 [
@@ -538,25 +630,29 @@ issue/interactive #3980 [
 	should not crash
 
 	display [
+		do [clicked?: no]
 		p: panel on-down [
-			layout/parent compose [
+			layout/parent [
 				text "A: " text "B"
 			] crash-box none
+			clicked?: yes
 		]
 	    crash-box: group-box []
 	]
 	click p		;; worker crashed?
+	expect [not crashed?]
+	clicked?: sync clicked?
+	expect [clicked?]
 ]
 
-issue/deadlock #3974 [
-	"[view] not response at second run `view [button "test"]` on macOS"
+issue/deadlock/interactive #3974 [
+	"[view] not response at second run `view [button {test}]` on macOS"
 	should not hang
 
 	loop 2 [		;; 2nd iteration hangs
-		execute [view [button "test"]]
+		display [button "test"]
 		settle-down 1 sec
-		s: screenshot		;@@ TODO: optimize this pattern; also `screenshot` should save it with the test number apart from returning
-		w: find-window-on s
+		expect [w: find-window-on s: screenshot]
 		close w
 	]
 ]
@@ -564,10 +660,10 @@ issue/deadlock #3974 [
 issue/layout #3964 [
 	"Area wrapping on macOS faulty"
 
-	txt: "wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap"
-	s1: shoot [area wrap 100 txt]
-	s2: shoot [area wrap 200 txt on-created [face/size/x: 100]]
-	expect visually-similar? s1 s2		;@@ TODO: make this and a metric that reliably compares 2 images
+	offload [txt: "wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap wrap"]		;-- must be longer than 100px (1 line)
+	s1: shoot [size 300x200 area wrap 100 txt]
+	s2: shoot [size 300x200 area wrap 200 txt on-created [face/size/x: 100]]	;-- this fails to rewrap after size change
+	expect [visually-similar? s1 s2]
 ]
 
 ;@@ TODO: #3959 should we test for it at all?
@@ -576,22 +672,22 @@ issue/interactive #3955 [
 	"`event/ctrl?` and `event/shift?` not set on `down` event"
 	;; this should be better covered by the clicker test
 
-	list: []
 	display [
+		do [list: []]
 		b: base on-down [repend list [event/flags event/ctrl? event/shift?]]
 	]
 	click/mods b [shift ctrl]
-	expect next list = reduce [yes yes]
-	expect (sort list/1) = sort [shift control down]	;@@ TODO: generic unordered comparison of lists, with similarity metric
+	sync list
+	expect [(next list) = reduce [yes yes]]
+	expect [not none? list/1]
+	expect [(sort list/1) = sort [shift control down]]	;@@ TODO: generic unordered comparison of lists, with similarity metric
 ]
 
 issue/interactive #3942 [
 	"View: Window lost focus after a modal window close"
 
-	;; logic: this is gonna work only when there's another (background-providing) window from another thread!
-	;; then if the worker's window goes behind the master's window - it's a bug
-	;@@ TODO: screenshot & check for background?
-	w: display [
+	;; logic: 'interactive' provides a background window; worker's window goes behind it and visually disappears - it's a bug
+	w1: display [
 		base cyan rate 10 on-time [
 			face/rate: none
 			view/flags [base red on-created [unview]] [modal]	;-- self-closing modal window
@@ -599,7 +695,8 @@ issue/interactive #3942 [
 	]
 	settle-down 1 sec		;-- let it process events
 	s: screenshot
-	expect box [on s w/offset w/size]		;@@ TODO: account for non-client stuff
+	expect [w2: find-window-on s]
+	param [w2/size/x - w1/size/x] [-10 < -1 < 4 > 10 > 20]		;-- paranoid check that it's our window that we found
 ]
 
-
+;@@ TODO: make all artifact file names sorted by issue so they can be navigated even with thousands of issues tested

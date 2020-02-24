@@ -4,7 +4,7 @@ Red [
 	license: 'BSD-3
 ]
 
-#include %dope.red
+; #include %dope.red
 #include %boxes.red
 
 ; #where's-my-error?
@@ -15,11 +15,11 @@ do-queued-events: does [
 
 
 activate: func [face [object!]] [
+	#assert [any [handle? face/state/1 integer? face/state/1]]
 	activate* face/state/1
 ]
 
-
-;@@ default `face?` doesn't work on loaded stuff ):
+;; default `face?` doesn't work on loaded stuff as it compare by object class id ):
 quacks-like-face?: func [o] [
 	empty? exclude exclude words-of face! words-of o [on-change* on-deep-change*]		;-- mold does not return on*change* 
 ]
@@ -31,8 +31,8 @@ screenshot: does [capture]		;-- no refinements for it
 
 
 save-capture: function [im [image!]] [
-	#assert [0 < length? im]
-	name: #composite %"(jobs/working-dir)capture-(current-key)-(timestamp).png"
+	#assert [0 < length? im "tuhguhtu"]
+	name: #composite %"(current-key)-capture-(timestamp).png"
 	part: skip tail name -4
 	i: 0
 	while [exists? name] [
@@ -48,6 +48,7 @@ capture: function [
 	/into im [image! none!] "Use an existing image buffer (none allocates a new one and is synonymous to no /into)"
 	/area nw [pair!] se [pair!] "Specify north-west and south-east corners rather than the whole screen"
 	/real "NW and SE are in pixels (default: units)"
+	/no-save "Do NOT save the image automatically"
 ][
 	#assert [any [not area  nw/x < se/x]]
 	#assert [any [not area  nw/y < se/y]]
@@ -57,63 +58,56 @@ capture: function [
 		se: units-to-pixels se
 	]
 	im: grab-screenshot* im nw attempt [se - nw]
-	#assert [0 < length? im]
-	save-capture im
-	log-image im
+	#assert [0 < length? im "akakoakskk"]
+	unless no-save [
+		save-capture im
+		log-image im
+	]
 	im
 ]
 
-;; two alternatives to (broken) `to-image face`:
-;; - using `to-image window` and
-;; - using `capture` (reliable but requires no overlapping)
-;; NOTE: does not include the non-client area when used on windows (contrary to to-image)
-capture-face: function [
-	"Capture an image of the FACE (like to-image)"
-	face [object!]
-	/real "Get real on-screen appearance (could be overlapped!)"
-	/with img [image!] "Provide an already captured whole window image"
-][
-	#assert ['window <> face/type]
-	win: window-of face
-	#assert [any [handle? win/state/1 integer? win/state/1]]		;-- handle must be set!
-	bor: borders-of win
-	siz: units-to-pixels face/size
-	either real [
-		ofs: get-client-offset face/state/1
-		capture/area/real ofs ofs + siz
-	][
-		default img: [to-image win]
-		ofs: bor/1 + units-to-pixels face-to-window 0x0 face
-		img: get-image-part img ofs siz
-		#assert [0 < length? img]
-		save-capture img
-	]
-]
 
-;; `to-image window` alternative
-capture-window: function [
-	"Capture an image of the WINDOW"
-	window [object!]
-	/real "Get real on-screen appearance (could be overlapped!)"
-	/whole "Include non-client area"
-	/with img [image!] "Provide an already captured whole window image"
+;; alternative to (broken and limited) `to-image face`
+capture-face: function [
+	"Capture an image of the FACE (like to-image, but reliable)"
+	face [object!]
+	/real "Get real on-screen appearance (could be overlapped!)"		;-- use `activate` before this!
+	/whole "Include non-client area (only has effect if face is a window)"
+	/with img [image!] "Provide an already captured whole window image to crop from"
 ][
-	#assert ['window = window/type]
-	unless whole [bor: borders-of window]
+	#assert [quacks-like-face? face]
+	#assert [not all [real with]]		;-- /with makes /real meaningless
+
+	wndw: either window?: face/type = 'window [face][window-of face]
+
 	either real [
-		; siz: units-to-pixels window/size		;-- has a rounding error of up to 1px
-		default img: [to-image window]
-		siz: img/size				;-- use the size provided by to-image
-		ofs: get-client-offset window/state/1
-		either whole
-			[ capture/area/real ofs ofs + siz ]
-			[ capture/area/real ofs - bor/1 ofs - bor/1 + siz ]
-		; capture/area/real ofs - bor/1 ofs + siz + bor/2
+		pix-ofs: client-offset-of face
+		either window? [
+			pix-sz:  window-size-of wndw					;-- need precise non-rounded size of it
+			pix-ofs: client-offset-of face
+			if whole [
+				brdr: borders-of wndw
+				pix-ofs: pix-ofs - brdr/1
+				pix-sz: pix-sz + brdr/1 + brdr/2
+			]
+		][
+			pix-sz: units-to-pixels face/size				;@@ TODO: obtain non-rounded size
+		]
+		capture/area/real pix-ofs pix-ofs + pix-sz			;-- `capture` saves and logs the result
 	][
-		default img: [to-image window]
-		unless whole [img: get-image-part img bor/1 img/size - bor/2 - bor/1]
+		default img: [to-image wndw]
+		brdr: borders-of wndw
+		either window? [
+			unless whole [img: get-image-part img brdr/1 img/size - brdr/2 - brdr/1]
+		][
+			pix-ofs: brdr/1 + units-to-pixels face-to-window 0x0 face	;@@ TODO: obtain pixel-precise offset
+			pix-sz: units-to-pixels face/size							;@@ TODO: obtain non-rounded size
+			img: get-image-part img pix-ofs pix-sz
+		]
 		#assert [0 < length? img]
-		save-capture img
+		save-capture img									;-- manually save and log the result
+		log-image img
+		img
 	]
 ]
 
@@ -145,13 +139,13 @@ find-edges: func [
 ]
 
 
-;; right now simple - just chooses a box with the biggest area
+;; right now simple - just chooses a box with the biggest area, no less than 50x50 (otherwise detects taskbar)
 find-window-on: function [
 	"On a solid background - find a window (return it as object [size: offset:]); or none"
 	image	[image!]
 ][
 	; save/as %buggy-image.png image 'png
-	r: object [size: 0x0 offset: none]
+	r: object [size: base: 0x0 offset: none]
 	foreach [_ xy1 xy2] find-boxes find-edges image [
 		size: pixels-to-units xy2 - xy1 + 1
 		if r/size/x * r/size/y < (size/x * size/y) [
@@ -159,7 +153,17 @@ find-window-on: function [
 			r/offset: pixels-to-units xy1
 		]
 	]
-	all [r/offset r]
+	log-artifact object [
+		type: 'window
+		box: r
+		key: current-key
+	]
+	all [
+		r/offset
+		r/size/x >= 50
+		r/size/y >= 50
+		r
+	]
 ]
 
 
@@ -183,6 +187,7 @@ imprint-boxes: function [
 	"Imprints boxes into an image"
 	im		[image!]
 	bxs		[block!]
+	color	[tuple!]		;-- has to be opaque, else inversion negates itself
 ][
 	~:  make op! :as-pair
 	++: make op! :at
@@ -191,15 +196,44 @@ imprint-boxes: function [
 		x1: xy1/x  x2: xy2/x
 		prob2: 1.0 - prob
 		for x x1 x2 [
-			i: im ++ (x ~ y1) i/1: white - i/1 * prob + (prob2 * i/1)
-			i: im ++ (x ~ y2) i/1: white - i/1 * prob + (prob2 * i/1)
+			i: im ++ (x ~ y1) i/1: prob * color + (prob2 * i/1)
+			i: im ++ (x ~ y2) i/1: prob * color + (prob2 * i/1)
 		]
 		for y y1 y2 [
-			i: im ++ (x1 ~ y) i/1: white - i/1 * prob + (prob2 * i/1)
-			i: im ++ (x2 ~ y) i/1: white - i/1 * prob + (prob2 * i/1)
+			i: im ++ (x1 ~ y) i/1: prob * color + (prob2 * i/1)
+			i: im ++ (x2 ~ y) i/1: prob * color + (prob2 * i/1)
 		]
 	]
 	im
+]
+
+
+;; colors are matched strictly! only coverage is allowed to diverge
+matching-colorsets?: function [
+	"Check if images IM1 and IM2 have similar color sets"
+	im1		[image!]
+	im2		[image!]
+	fuzz	[percent!] "Coverage comparison fuzziness (0% = strict)"
+][
+	cs1: get-colorset im1
+	cs2: get-colorset im2
+	tot1: im1/size/x * im1/size/y
+	tot2: im2/size/x * im2/size/y
+	foreach [cs1 cs2 tot1 tot2] reduce [cs1 cs2 tot1 tot2  cs2 cs1 tot2 tot1] [		;-- match cs1 to cs2, then cs2 to cs1
+		foreach [clr cnt1] cs1 [
+			amnt1: 100% * cnt1 / tot1
+			if amnt1 <= fuzz [break]		;-- other colors are insignificant
+			in2: find/skip cs2 clr 2
+			cnt2: in2/2
+			amnt2: 100% * cnt2 / tot2
+			if any [
+				none? cnt2					;-- matching color not found
+				fuzz < abs amnt2 - amnt1	;-- covered area is too different
+			] [return no]
+			remove/part in2 2				;-- do not match this color again
+		]
+	]
+	yes
 ]
 
 
@@ -231,6 +265,116 @@ upscale: function [image [image!] by [number!] /into tgt [image!]] [
 	]
 	draw any [tgt image/size * by] next cache
 ]
+
+
+mix-images: function [im1 [image!] im2 [image!] offs1 [pair!] offs2 [pair!] amnt1 [percent! float!]] [
+	cache: [#[none]]
+	im2: either all [cache/1 cache/1/size = im2/size]
+		[ draw cache/1 [image im2 0x0] ]		;@@ im2 should be opaque for this to work!
+		[ cache/1: copy im2 ]
+	im2/alpha: max 0 min 255 round/to 255 * amnt1 1
+	draw im1/size compose [image im1 (offs1) image im2 (offs2)]
+]
+
+
+
+; ;@@ BUG: this will eat a lot of RAM - TODO: use this after GC can collect images
+; blur3x3: function [im [image!]] [
+; 	im-1: mix-images
+; 		mix-images im im -1x-1  1x1 50% 
+; 		mix-images im im  1x-1 -1x1 50% 
+; 		0x0 0x0 50%
+; 	im-2: mix-images
+; 		mix-images im im -1x0 1x0 50% 
+; 		mix-images im im 0x-1 0x1 50% 
+; 		0x0 0x0 50%
+; 	mix-images
+; 		mix-images im-1 im-2 0x0 0x0 33.3%
+; 		im 0x0 0x0 75%
+; ]
+
+; ;@@ BUG: this is not a proper blur, as each next image gets composed with the whole stack of previous images
+blur3x3: function [im [image!]] [
+	im-1: copy im  im-1/alpha: 255 - 25
+	im-2: copy im  im-2/alpha: 255 - 50
+	draw copy im [
+		image im-2 -1x0
+		image im-2  1x0
+		image im-2  0x1
+		image im-2  0x-1
+		image im-1 -1x-1
+		image im-1  1x-1
+		image im-1 -1x1
+		image im-1  1x1
+	]
+]
+
+
+;@@ TODO: routine or RedCV? also this needs calibration (I only checked it on a few simple images)
+visually-similar?: function [
+	"Loosely compare two images for equality"
+	im1 [image!]
+	im2 [image!]
+	/with fuzz [percent! float!] "Comparison fuzziness (0% = strict, default = 10%)"
+][
+	#assert [im1/size = im2/size]
+	default fuzz: [10%]
+	if fuzz = 0% [fuzz: 0.01%]								;-- no zero division
+	im1: blur3x3 im1										;-- blur images to lessen the effect of image offsets due to possible rounding errors
+	im2: blur3x3 im2
+	sum1: 0.0 sum2: 0.0 sumcsq: 0.0
+	max-sumcsq: 1.0 * fuzz * im1/size/x * im1/size/y		;-- sum of squares of pixel contrasts, allowing each pixel to have up to fuzz=contrast
+	repeat i length? im1 [
+		px1: im1/:i  px2: im2/:i
+		sum1: sum1 + px1/1 + px1/2 + px1/3
+		sum2: sum2 + px2/1 + px2/2 + px2/3
+		c: (contrast px1 px2) / fuzz						;-- using custom 'contrast' definition sensitive to c >> fuzz
+		sumcsq: c * c + sumcsq
+		if sumcsq > max-sumcsq [
+			; ? sumcsq ? max-sumcsq 
+			return no
+		]
+	]
+	; ? sumcsq ? max-sumcsq 
+	dif: (abs sum2 - sum1) / max sum1 sum2					;-- relative difference in overall brightness
+	; ? dif
+	dif <= fuzz
+]
+
+; ;@@ BUG: this is not a proper blur, as each next image gets composed with the whole stack of previous images
+; blur5x5: function [im [image!]] [
+; 	im-1:  copy im  im-1/alpha:  255 - 1
+; 	im-4:  copy im  im-4/alpha:  255 - 4
+; 	im-6:  copy im  im-6/alpha:  255 - 6
+; 	im-16: copy im  im-16/alpha: 255 - 16
+; 	im-24: copy im  im-24/alpha: 255 - 24
+; 	draw copy im [
+; 		image im-24 -1x0
+; 		image im-24  1x0
+; 		image im-24  0x1
+; 		image im-24  0x-1
+; 		image im-16 -1x-1
+; 		image im-16  1x-1
+; 		image im-16 -1x1
+; 		image im-16  1x1
+; 		image im-6   0x2
+; 		image im-6   0x-2
+; 		image im-6  -2x0
+; 		image im-6   2x0
+; 		image im-4  -2x-1
+; 		image im-4   2x1
+; 		image im-4  -1x-2
+; 		image im-4   1x2
+; 		image im-4   2x-1
+; 		image im-4  -2x1
+; 		image im-4   1x-2
+; 		image im-4  -1x2
+; 		image im-1  -2x-2
+; 		image im-1   2x2
+; 		image im-1  -2x2
+; 		image im-1   2x-2
+; 	]
+; ]
 
 
 explore: function [
@@ -299,13 +443,13 @@ explore-artifact: function [art [object!]] [
 				exp-map: copy #()
 				if all [in o 'type  o/type = 'box] [
 					exp-map/edges: [if edges [explore imprint-edges copy image edges]]
-					exp-map/boxes: [if boxes [explore imprint-boxes copy image boxes]]
-					exp-map/box:   [if box   [explore imprint-boxes copy image reduce [100% box/1 box/1 + box/2]]]
+					exp-map/boxes: [if boxes [explore imprint-boxes copy image boxes magenta]]
+					exp-map/box:   [if box   [explore imprint-boxes copy image reduce [100% box/1 box/1 + box/2] cyan]]
 				]
 				view/options map-each [k v] to block! o [
 					compose/deep/only [
 						text 100 (rejoin [k ":"])
-						button 300 left (mold/flat/part :v 70)
+						button 300 left (mold-part/flat :v 70)
 						on-click [
 							either act: select exp-map (to lit-word! k)
 								[do with o act]
@@ -327,14 +471,26 @@ explore-artifact: function [art [object!]] [
 ; ██████ DIALECTIC STUFF ██████
 
 
+to-screen: func [
+	"Translate POINT from face or box into screen coordinates (in units)"
+	point [pair!]
+	from [object!]
+][
+	either quacks-like-face? from [
+		face-to-screen point from
+	][
+		point + from/offset + any [attempt [from/base] 0x0]
+	]
+]
+
 ~at~: make op!
 face-at: function [
 	"Return a screen coordinate of a described POINT in a FACE"
-	face	[object!]
+	face	[object!] "Can be a box as well"
 	point	[pair! block!] "Offset or [anchor +/- pair/integer ...]"
 	/local v-anchor h-anchor v-oper h-oper v-offset h-offset
 ][
-	if pair? point [return face-to-screen point face]
+	if pair? point [return to-screen point face]
 
 	=v-anchor=: [set v-anchor ['top | 'middle | 'bottom] opt =v-offset=]
 	=h-anchor=: [set h-anchor ['left | 'center | 'right] opt =h-offset=]
@@ -362,7 +518,7 @@ face-at: function [
 	if integer? h-offset [h-offset: 1x0 * h-offset]
 	if v-oper [xy: xy + do reduce [0x0 v-oper v-offset]]
 	if h-oper [xy: xy + do reduce [0x0 h-oper h-offset]]
-	face-to-screen xy face
+	to-screen xy face
 ]
 
 
@@ -372,7 +528,7 @@ context [
 		if any [word? get/any word path? get/any word] [set/any word get/any get word]
 		;@@ TODO: log-trace coercions?
 		also r: type = type? get/any word
-			unless r [log-trace #composite "coerce: (word) -> (mold/flat/part get/any word 40) [expected: (type)]"]
+			unless r [log-trace #composite "coerce: (word) -> (mold-part/flat get/any word 40) [expected: (type)]"]
 	]
 
 	u->p: :units-to-pixels
@@ -461,13 +617,13 @@ context [
 			[	=where=
 				opt [if (find [at on] where-op) [=anchors= | =offset=]]		;-- only allow position for at/on
 				opt [if (where-op <> 'around) =size=]						;-- disable size in 'around' mode (size equals area/size)
-			|	=size= =where= if (where-op <> 'around)
+			|	=size= =where= if (where-op <> 'around)						;-- in `around` mode this is invalid as it has size
 				opt [if (find [at on] where-op) [=anchors= | =offset=]]
 			]
 			opt [=coverage= =coloration= | =coloration= =coverage=]
 		]
 
-		unless parse/case spec =spec= [ERROR "Invalid box spec: (mold spec)"]
+		unless parse/case spec =spec= [ERROR "Invalid box spec: (mold spec)"]	;@@ TODO: better error report (like area=none)
 
 		image: where
 
@@ -537,8 +693,10 @@ context [
 	set 'box function [
 		"Find a box on an image given some characteristics"
 		spec [block!]
+		/image "Return an image snapshot of the box instead"
 		/local art
 	][
+		return-image?: image
 		log-artifact art: object compose/only [
 			type: 'box
 			spec: (copy spec)
@@ -571,6 +729,7 @@ context [
 		]
 
 		art/image: image: spec/image
+		base: any [attempt [spec/area/base] 0x0]
 
 		either spec/where-op = 'around [
 			area: spec/area			;-- `area` defines a box on an `image`
@@ -579,32 +738,28 @@ context [
 			if spec/area [			;-- won't be needing the whole image; crop it
 				art/image: image: get-image-part
 					image
-					u->p spec/area/offset
+					u->p base: spec/area/offset
 					u->p spec/area/size
 			]
 			area: spec				;-- else use offset & size from spec itself
 		]
 
-		art/result: either spec/offset [				;-- no need to extract all boxes - have size and offset
+		art/box: box: either spec/offset [		;-- no need to extract all boxes - have size and offset
 			#assert [none? spec/h-anchor]		;-- anchors only make sense without offset
 			#assert [none? spec/v-anchor]
-			all [
-				? area
-				set [offset size] art/box: bestbox image area
-				test-coverage/part/artifact image spec offset size art
-				object compose [offset: (p->u offset) size: (p->u size)]		;-- should be scaled, for compatibility with faces
-			]
-		][									;-- without offset we look for a box of a specific size among all boxes
-			art/box: box: switch spec/where-op [
+			bestbox image area
+		][										;-- without offset we look for a box of a specific size among all boxes
+			switch spec/where-op [
 				inside within [scan4box image spec/size]
 				at on [scan4box/anchors image spec/size spec/h-anchor spec/v-anchor]
 			]
-			all [
-				set [offset size] box
-				image: get-image-part image offset size
-				test-coverage/artifact image spec art
-				object compose [offset: (p->u offset) size: (p->u size)]
-			]
+		]
+		art/result: all [
+			set [offset size] box
+			test-coverage/part/artifact image spec offset size art
+			either return-image?
+				[get-image-part image offset size]
+				[object compose [offset: (p->u offset) size: (p->u size) base: (base)]]		;-- should be scaled, for compatibility with faces
 		]
 	]
 
@@ -637,10 +792,12 @@ context [
 			(default where-op: ['in])						;-- default to 'in' mode; allow op-less `where: image` expression
 		]
 		
-		unless parse/case spec [
+		=spec=: [
 			'aligned =anchors= =where=
 		|	=where= 'aligned =anchors=
-		] [ERROR "Invalid text spec: (mold spec)"]
+		]
+
+		unless parse/case spec =spec= [ERROR "Invalid text spec: (mold spec)"]
 
 		#assert [image? where]
 		image: where
