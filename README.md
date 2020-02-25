@@ -59,8 +59,8 @@ Requires porting guide, user's guide.
 
 ### Rationale
 
-- In my opinion View subsystem has long crossed the point where a minor change may have dramatic set of regressions, thus became hard to maintain or refactor. It requires a tool to detect such regressions promptly and automatically.
-- There's no metric other than number of issues on Github that may compare the status of View support of each major platform (or even it's version, like W7 vs W8+). We usually do not know what will work here or there. This largely lowers portability of visual applications and requires a lot of effort and VM testing to achieve it for each particular app ('diagrammar' being a great but not the only showcase of this).
+- In my opinion View subsystem has long crossed the point where every minor change may bring about a set of regressions, thus became hard to maintain or refactor. It requires a tool to detect such regressions promptly and automatically.
+- There's no metric other than number of issues on Github that may compare the status of View support of each major platform (or even it's version, like W7 vs W8+). We usually do not know what will work here or there. This largely hinders portability of visual applications and requires a lot of effort and VM testing to achieve it for each particular app ('diagrammar' being a great but not the only illustration of this point).
 
 ### Scope
 
@@ -73,9 +73,9 @@ Previous experiments on automated testing have shown the limitations of Github C
 - Choice of OS. E.g. many bugs may appear on W7 only and cannot be tested by GH.
 - OS settings. E.g. some issues may only be detected with scaling different than 100%, but GH provides only the default setting.
 - Lack of interactivity. View tests are much more complex than traditional assertion tests and require an UI to overview each test result to understand it. I find it unlikely that GH can provide it.
-- Time span. There are certain limitations to how fast View tests can be run. E.g. Red window may require all the lower windows to finish drawing before it can redraw itself, thus requiring synchronization with the OS and other programs. Another point is single/double click event distinction. Plus a lot of issues will require compilation in release mode.
+- Time span. There are certain limitations to how fast View tests can be run. E.g. Red window may require all the lower windows to finish drawing before it can redraw itself, thus requiring synchronization with the OS and other programs; single/double click event distinction; a lot of issues will require compilation in release mode; some issues will hang and require a timeout. Some of the image analysis functions are time consuming too.
 
-In the light of this, the system is meant to be run in user space. It's okay for it to be slow and even take an hour for a full run, as long as no user interaction is required during this hour.
+In this light, the system is meant to be run in user space. It's okay for it to be slow and even take an hour for a full run, as long as no user interaction is required during the run.
 
 ### Success score
 
@@ -95,4 +95,4 @@ The system will display such deviations for an overview and approval, so the use
 
 ### Manual tests
 
-Some tests can be written extensively, like: click with all combinations of all mouse buttons (e.g. lmb+rmb+mmb...) with all combinations of modifiers (shift, control...) on all faces and check all produced events properties. These will cover a lot of ground not available to per-issue tests and even make some of them unnecessary.
+Some tests can be written extensively, like: click all combinations of all mouse buttons (e.g. lmb+rmb+mmb...) with all combinations of modifiers (shift, control...) on faces of all types and check all produced events properties. These will cover a lot of ground not available to per-issue tests and even make some of them unnecessary.
