@@ -96,3 +96,26 @@ The system will display such deviations for an overview and approval, so the use
 ### Manual tests
 
 Some tests can be written extensively, like: click all combinations of all mouse buttons (e.g. lmb+rmb+mmb...) with all combinations of modifiers (shift, control...) on faces of all types and check all produced events properties. These will cover a lot of ground not available to per-issue tests and even make some of them unnecessary.
+
+### How it works
+
+Key things to understand:
+
+#### 1. There is a 'clicker' process and there are one or more 'worker' processes.
+
+I call it 'clicker' because it's able to simulate clicks ;) But also any other input. It is the central process that runs and manages workers. Workers' role is to run tests code, clicker's role is to oversee that and analyze the outputs.
+
+One worker (called `main-worker`) process runs the majority of the tests code. The other ones are only started when it's necessary to compile something.
+
+#### 2. There are two consoles (or more generally Red builds)!
+
+One console runs the workers. Is the one the system is testing: it should better stay unmodified.
+
+Another console runs the clicker and allows it to do it's magick. It is heavily modified: it includes input simulation, image analysis routines (may even include RedCV one day), and it is required to be as stable as possible.
+
+#### Some reasons for this design:
+
+- Eliminate the test system environment influence on test results. Both may run View code and should not affect each other's event processing pipeline.
+- Bugs in clicker console should not be taken for bugs in test console, and bugs in test console should not stop clicker from working or even interrupt it.
+- Parallelize compilation, as it will only slow down during foreseeable future.
+
