@@ -608,7 +608,7 @@ context [
 
 		=coloration=: [
 			opt quote color:
-			set color-op ['all | 'almost]	;@@ more? `somewhat`?
+			set color-op ['all | 'almost | 'somewhat]
 			set color [tuple! | word! | path!]
 			if (coerce color tuple!)
 		]
@@ -667,7 +667,7 @@ context [
 		;@@ TODO: maybe exclude borders? eat a pixel from all sides? to account for scaling inaccuracies
 
 		cov/colorset: cs: get-colorset image
-		req-match: select [all 100% almost 90%] spec/color-op		;-- required similarity of image colors to the one provided
+		req-match: select [all 100% almost 90% somewhat 75%] spec/color-op		;-- required similarity of image colors to the one provided
 		total: image/size/x * image/size/y
 		cov/amount: coverage: sum map-each [color count] cs [		;-- count coverage of matching colors
 			match: 100% - contrast color spec/color

@@ -136,6 +136,7 @@ simulate-input-raw: function [input [block!] /local state subj xy] [
 	unless parse input [any [
 		set state ['+ | '-] set subj [char! | word!] (sim subj state)
 	|	set xy pair! (move xy)
+	|	set t [integer! | float! | time!] (wait t)
 	]] [? input do make error! "TODO 2"]
 ]
 

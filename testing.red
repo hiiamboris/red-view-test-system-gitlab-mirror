@@ -52,7 +52,7 @@ toolset: context [
 			keep [offload sync pull push should settle-down expect-box crashed?]	;-- common words
 			case/all [
 				interactive
-					[keep [display click drag shoot close-windows close]]
+					[keep [display click drag roll-the-wheel shoot close-windows close]]
 				layout
 					[keep [shoot close-windows]]
 				any [compile compiled]
@@ -117,8 +117,9 @@ toolset: context [
 	crashed?: function [
 		"Check if main worker has crashed and if so, return it's last output & restart it"
 	][
-		wait 0.2		;-- delay for OS to realize it's stopped
+		wait 0.2		;-- delay for OS to realize the worker process has stopped
 		unless jobs/alive? main-worker [
+			;@@ TODO: subtract something from the score on crash??
 			panic #composite "main-worker has CRASHED! during execution of:^/(mold main-worker/last-code)"
 			output: jobs/peek-worker-output main-worker		;-- read it's last wish
 			jobs/restart-worker main-worker
@@ -148,14 +149,14 @@ toolset: context [
 			any [				;-- check for errors
 				silent
 				not parse output [thru "***" thru "Error:" thru "^/*** Where:" thru "^/*** Stack:" to end]
-				ERROR "command (mold-part/flat code 30) failed with:^/(output)"
+				ERROR "command (mold-part/flat code 30) failed with:^/(form/part output 100)"
 			]
 		][
 			either jobs/alive? main-worker [
 				ERROR "=== Worker is BUSY! after executing:^/(mold-part code 100)^/==="		;@@ TODO: kill it or not?
 			][
 				crashed?							;-- crashed! report and restart
-				return ()							;-- make the test (if any) fail
+				system/words/return ()				;-- make the tests (if any) fail
 			]
 		]
 		either return [							;-- load the output?
@@ -170,23 +171,14 @@ toolset: context [
 	;@@ TODO: keep all important stuff in contexts and context names - somewhere else? for sync not to override them
 
 	pull: sync: function [
-		"Sets local WORD to the value of this word held by main worker"
+		; "Sets local WORD to the value of this word held by main worker"		-- deprecated behavior as I forget to declare a set-word to make it local
+		"Return the value of the WORD used by main worker"
 		'word	[any-word!]
 		;@@ TODO: /with other-worker.. (or /from)
 		/local x
 	][
 		set/any 'x offload/return reduce [to get-word! word]	;@@ TODO: trap it
-		if value? 'x [set word :x]			;-- do not pull `unset` words as they are mistakingly pulled
-		;@@ TODO: log-trace `unset` pulls?
-		; if all [
-		; 	object? face: get word
-		; 	quacks-like-face? face
-		; ][								;@@ HACK: also retrieve face's handle (as integer) for non-client size estimation!
-		; 	face/state/1: offload/return compose [
-		; 		second load next mold/all (as path! compose [(to word! word) state 1])
-		; 	]
-		; ]
-		get/any word
+		; if value? 'x [set word :x]			;-- do not pull `unset` words as they are mistakingly pulled -- deprecated
 	]
 
 	push: function [
@@ -218,7 +210,7 @@ toolset: context [
 			flgs  [append view-path 'flags    repend cmd ['quote flgs]]
 		]
 		offload compose/only cmd						;-- the main window
-		foreach sw set-words [pull (sw)]				;@@ TODO: process ALL queued events before pulling?
+		foreach sw set-words [set/any sw pull (sw)]		;@@ TODO: process ALL queued events before pulling?
 		foreach sw set-words [							;-- also update window objects for use in capture-face
 			all [
 				object? set/any 'face get/any sw
@@ -248,10 +240,8 @@ toolset: context [
 		]
 		settle-down 1 sec
 		
-		;@@ img: offload/return compose [to-image (layout)]	-- doesn't work
-		;@@ workaround:
-		img: offload/return [to-image top-window]
-		layout: get layout
+		img: offload/return compose [to-image (layout)]
+		layout: pull (layout)		;-- sync it, as we require it right now and it can be unset or filled with other data locally
 		#assert [object? :layout]
 		#assert [quacks-like-face? :layout]
 		img: capture-face/with layout img
@@ -293,7 +283,6 @@ toolset: context [
 		t1: now/time/precise
 		; im: reduce [capture none]
 		im: [#[none] #[none]]
-		print ["SD:" type? im/1 attempt [im/1/size] type? im/2 attempt [im/2/size]]
 		im/1: capture/no-save/into im/1
 		still: 1
 		until [
@@ -347,6 +336,7 @@ toolset: context [
 		/at point	[pair! block!] "Offset in the face or coordinate descriptor block"
 		; /no-wait	"Do not wait for the worker to process the event"
 		/right		"Simulate RMB instead"
+		/async		"Do not wait for the worker to process the click event"		;-- this is useful when popping up any menu - the event loop stops
 		/local mod
 	][
 		if mods [simulate-input-raw map-each/eval mod mlist [['+ mod]]]
@@ -362,7 +352,19 @@ toolset: context [
 		]
 		simulate-input-raw compose pick [ [(target) + rmb - rmb][(target) + lmb - lmb] ] right
 		if mods [simulate-input-raw reverse map-each/eval mod mlist [[mod '-]]]
-		offload body-of :do-queued-events				;-- let worker process the input (else sync may return old values)
+		unless async [offload body-of :do-queued-events]	;-- let worker process the input (else sync may return old values in `sync`)
+	]
+
+	roll-the-wheel: function [
+		"Simulate a mouse-wheel event"
+		'direction [word!] "up or down"
+		;@@ TODO: add /mods? /async? multiplier for many rotations at once?
+	][
+		#assert [find [up down] direction]
+		simulate-input-raw compose [
+			(pick [+ -] 'up = direction) wheel
+		]
+		offload body-of :do-queued-events	;-- let worker process the input (else wheel-up + wheel-down may produce no event at all)
 	]
 
 	;@@ TODO: make issue set-words local; and also synced words local
@@ -518,11 +520,12 @@ toolset: context [
 		code	[block! string!] "Code to compile"			;-- string is meant for invalid code - non-loadable
 		/release "-r" /devmode "-c"
 		/debug "-d"
-		/header "Add header automatically"
+		/header "Add header automatically"		;@@ TODO: make it the default??
 		/local flag opt
+		;@@ TODO: -e flag too?
 	][
 		if all     [release devmode] [ERROR "/release and /devmode are mutually exclusive"]
-		unless any [release devmode] [ERROR "compilation mode (/release or /devmode) should be specified"]		;@@ TODO: or /devmode by default??
+		unless any [release devmode] [ERROR "compilation mode [/release or /devmode] should be specified"]		;@@ TODO: or /devmode by default??
 		flags: rejoin map-each [flag opt] reduce [release " -r" devmode " -c" debug " -d"] [either flag [opt][""]]
 
 		if block? code [code: mold/all/only code]		;@@ okay to use /all ?

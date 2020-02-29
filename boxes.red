@@ -432,17 +432,6 @@ boxes-ctx: context [
 		reduce [min-dist max-dist]
 	]
 
-	set 'min-glyph-distance function [boxes [block!]] [
-		r: first min+max-glyph-distance boxes
-		all [r < 1e10  pixels-to-units r]
-	]
-
-	set 'max-glyph-distance function [boxes [block!]] [
-		r: second min+max-glyph-distance boxes
-		all [r >= 0  pixels-to-units r]
-	]
-
-
 	min+max-glyph-size: function [boxes [block!]] [
 		#assert [even? length? boxes]
 		min-area: 1e10
@@ -455,6 +444,18 @@ boxes-ctx: context [
 			if area > max-area [max-area: area  max-size: size]
 		]
 		reduce [min-size max-size]
+	]
+
+	;; these are meant to be used in tests as they return scaled results
+
+	set 'min-glyph-distance function [boxes [block!]] [
+		r: first min+max-glyph-distance boxes
+		all [r < 1e10  pixels-to-units r]
+	]
+
+	set 'max-glyph-distance function [boxes [block!]] [
+		r: second min+max-glyph-distance boxes
+		all [r >= 0  pixels-to-units r]
 	]
 
 	set 'min-glyph-size function [boxes [block!]] [

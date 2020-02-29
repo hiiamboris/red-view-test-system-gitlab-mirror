@@ -163,6 +163,7 @@ jobs: make any [value-of jobs  object!] [
 			;@@ /input/output/error isn't working - see #4241
 			;@@ it's best to call 3369 build, since other builds have mold heisenbug (#4291)
 			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
+			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			pid: call/shell #composite {d:\devel\red\red-src\red\console-view-3369-nodebug.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			assert [pid <> -1]
 			; pid: call #composite {red --cli (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
