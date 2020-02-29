@@ -46,11 +46,11 @@ issue/interactive #4246 [
 	display [r: radio [append list face/data]]
 
 	click pos: r ~at~ [middle left + 10]
-	sync list
+	list: sync list
 	expect [list = reduce [true]]
 
 	click pos
-	sync list
+	list: sync list
 	expect [list = reduce [true]]		;; shouldn't call `on-change` again when already checked
 ]
 
@@ -63,7 +63,7 @@ issue/interactive #4245 [
 		b: button [c/data: none append list c/data]
 	]
 	click b
-	sync list
+	list: sync list
 	expect [list = reduce [false]]
 ]
 
@@ -139,7 +139,7 @@ issue/interactive #4226 [
 	expect [box [at s1 fld/offset fld/size]]
 	drag fld [right by 20]
 	s2: shoot w
-	sync fld
+	fld: sync fld
 	expect [fld/offset/y = o1/y]
 	param  [fld/offset/x - o1/x] [17 < 18 < 20 > 22 > 23]
 	expect [box [at s2 fld/offset fld/size]]
@@ -418,8 +418,7 @@ issue/compile/interactive #4061 [
 
 		;; right now I'm just compiling it and checking for 'null window handle' output
 		;; logic: compile, run, do clicks, check output for warnings
-		exe: compile/release/debug [		;-- need -d to see the warning in output
-			Red [needs: view]
+		exe: compile/header/release/debug [		;-- need -d to see the warning in output
 			view [
 			    base 300x400 on-alt-down [
 			        view/options
@@ -449,8 +448,7 @@ issue/compile/interactive #4061 [
 	]
 
 	variant 2 [	;; crash ;; logic: capture the output, check for an error
-		exe: compile/release/debug [
-			Red [needs: view]
+		exe: compile/header/release/debug [
 			view [
 			    base 300x400 on-alt-down [
 			        view/options
@@ -616,7 +614,7 @@ issue/compile/interactive #4005 [
 	"[View] regression in Windows backend"
 
 	;; logic: it should just show 'alert' window
-	exe: compile/release/debug [Red [Needs: View] alert "test"]
+	exe: compile/release/debug/header [alert "test"]
 	run/output exe %4005out.txt
 	scrn: screenshot
 	expect [wndw: find-window-on scrn]
@@ -677,7 +675,7 @@ issue/interactive #3955 [
 		b: base on-down [repend list [event/flags event/ctrl? event/shift?]]
 	]
 	click/mods b [shift ctrl]
-	sync list
+	list: sync list
 	expect [(next list) = reduce [yes yes]]
 	expect [not none? list/1]
 	expect [(sort list/1) = sort [shift control down]]	;@@ TODO: generic unordered comparison of lists, with similarity metric
@@ -699,4 +697,433 @@ issue/interactive #3942 [
 	param [w2/size/x - w1/size/x] [-10 < -1 < 4 > 10 > 20]		;-- paranoid check that it's our window that we found
 ]
 
-;@@ TODO: make all artifact file names sorted by issue so they can be navigated even with thousands of issues tested
+issue/layout #3861 [
+	"Height of text face not adjusting to wrapped text"
+
+	;; logic: make 2 faces, one tall enough, one should be extended automatically - should look the same
+	s1: shoot [
+		backdrop white
+		size 120x120
+		text white 100     "111111 222222 3333333 4444444 555555 6666666"
+	]
+	s2: shoot [
+		backdrop white
+		size 120x120
+		text white 100x100 "111111 222222 3333333 4444444 555555 6666666"
+	]
+	; expect [visually-similar? s1 s2]
+	expect [s1 = s2]
+]
+
+issue/layout #3847 [
+	"[draw][text] text size in draw is different when face color is specified"
+
+	offload [
+		l1: layout [backdrop white size 200x200]
+		f1: make face! [
+			type: 'base
+			offset: 0x0
+			size: 160x160
+			color: white
+			draw: [text 0x0 "Hi there"]
+		]
+		append l1/pane f1
+
+		l2: layout [backdrop white size 200x200]
+		f2: make face! [
+			type: 'base
+			offset: 0x0
+			size: 160x160								;-- no color here
+			draw: [text 0x0 "Hi there"]
+		]
+		append l2/pane f2
+
+		l1: view/no-wait l1
+		l2: view/no-wait l2
+	]
+
+	s1: shoot l1
+	s2: shoot l2
+	expect [s1 = s2]									;@@ TODO: highlight differences in images in UI
+]
+
+;; Camera doesn't capture images #3839 -- need a cam to reproduce
+
+issue/layout #3838 [
+	"Custom tab of the Tab-panel can't be selected on start"
+
+	s: shoot [tab-panel 120x140 ["a" [base 80x80 magenta] "b" [base 80x80 cyan]] with [selected: 2]]
+	expect [box [80x80 within s > 95% all cyan]]
+]
+
+;; @@ TODO: #3835 -- hard to reliably detect those little boxes: what size they are? is it always the same?
+
+issue #3832 [
+	"[VID] Cannot give multiple flags in VID dialect"
+
+	flags: offload/return [
+		flags: none
+		view [fld: field all-over no-border rate 10 on-time [flags: fld/flags unview]]
+		flags
+	]
+	expect [(sort flags) = sort [all-over no-border]]
+]
+
+;; @@ TODO: #3827 - not sure what result we should consider valid - 2nd or 3rd group of the four
+
+issue/interactive #3823 [
+	"[View] `event` gets corrupted inside an actor by another `view []`"
+
+	;; logic: save event/offset before & after the `view`, compare
+	display [
+		do [list: []]
+		b: base 80x80 cyan on-down [
+			append list event/offset
+			view [base purple rate 10 on-time [unview]]
+			append list event/offset
+		]
+	]
+
+	click b
+	wait 0.5		;-- let `view` finish and add another offset
+	list: sync list
+	expect [list/1 = list/2]
+	param [list/2/x] [33 < 36 < 40 > 44 > 47]		;-- becomes 0x0 on failure
+	param [list/2/y] [33 < 36 < 40 > 44 > 47]
+]
+
+issue/interactive #3822 [
+	{[View] `modal` flag doesn't work with layered windows}
+
+	;; logic: register events after opening the modal child windows, check if they are ignored
+	display [
+		do [list: []]
+		b: base 80x80 #FF000020
+		on-created [ofs: face/offset + face/parent/offset siz: face/size]
+		on-down [
+			append list 'down
+			view/options/no-wait compose [
+				base 80x80 #00FF0020 on-down [unview]
+			] [set 'ofs offset: ofs - (siz * 1x0) - 30x0]
+		]
+	]
+	click b
+	wait 1				;-- do not make a double click
+	click b
+	wait 1
+	click b				;-- click 3 times instead of 2 to account for #4306
+	list: sync list
+	expect [list = [down]]
+]
+
+;; #3818 - dismissed for not being reproducible
+
+issue/interactive #3815 [
+	"[View] Scroller won't move by steps smaller than 1%"
+
+	;; logic: click scroller multiple times, see if it moves
+	top-window: display [scro: scroller with [steps: 1.0 / 101]]
+	s1: shoot top-window
+	loop 20 [click scro ~at~ [right - 5]]
+	s2: shoot top-window
+	expect [s1 <> s2]		;@@ TODO: check the resulting scroller offset as well?
+]
+
+issue/layout #3814 [
+	"[View] rich-text metrics get corrupted by introducing new facets"
+
+	offload [
+		extend system/view/VID/styles [
+			style1: [template: [type: 'rich-text junk1: junk2: 1]]
+			style2: [template: [type: 'rich-text junk1: 1]]
+			style3: [template: [type: 'rich-text line-spacing: handles: none junk1: junk2: 1]]
+		]
+		list: []
+ 	]
+ 	s0: shoot [rich-text 100x100 "A^/A^/A^/A^/A^/A" cyan on-created [append list size-text/with face "A"]]
+ 	s1: shoot [style1    100x100 "A^/A^/A^/A^/A^/A" cyan on-created [append list size-text/with face "A"]]
+ 	s2: shoot [style2    100x100 "A^/A^/A^/A^/A^/A" cyan on-created [append list size-text/with face "A"]]
+ 	s3: shoot [style3    100x100 "A^/A^/A^/A^/A^/A" cyan on-created [append list size-text/with face "A"]]
+ 	list: sync list
+
+ 	expect [list/1 = list/2]							;-- all glyphs of equal size?
+ 	expect [list/1 = list/3]
+ 	expect [list/1 = list/4]
+ 	param [list/2/x] [5 < 7 <  9 > 12 > 15]				;-- sane glyph size?
+ 	param [list/2/y] [6 < 9 < 11 > 14 > 18]
+ 	expect [s0 = s1]									;-- typesetting correct on all images?
+ 	expect [s0 = s2]
+ 	expect [s0 = s3]
+
+ 	offload [											;-- clean up
+ 		remove/key system/view/VID/styles 'style1
+ 		remove/key system/view/VID/styles 'style2
+ 		remove/key system/view/VID/styles 'style3
+ 	]
+]
+
+issue/layout #3813 [
+	"[Draw] ignores matrix commands on rich-text surface"
+
+	s1: shoot [
+		base white 100x100 draw [			;-- I'm not testing `base` here, supposing that it's working
+			pen blue
+			clip 0x0 50x50
+			translate 10x10
+			rotate 10 0x0
+			scale 2 2
+			box 0x0 60x20
+			text 0x0 "X"
+		]
+	]
+	s2: shoot [
+		rich-text white 100x100 draw [
+			pen blue
+			clip 0x0 50x50
+			translate 10x10
+			rotate 10 0x0
+			scale 2 2
+			box 0x0 60x20
+			text 0x0 "X"
+		]
+	]
+	expect [visually-similar? s1 s2]
+]
+
+issue #3812 [
+	offload [
+		r: rtd-layout ["ab^/cd"]
+		sz1: size-text r
+		sz2: size-text/with r "a"
+		sz3: size-text/with r "abcdefgh"
+		sz4: size-text/with r "a^/^/b^/^/c^/^/d"
+	]
+	sz1: sync sz1
+	sz2: sync sz2
+	sz3: sync sz3
+	sz4: sync sz4
+	expect [sz1 <> sz2]
+	expect [sz1 <> sz3]
+	expect [sz1 <> sz4]
+	expect [sz2/y = sz3/y]
+	param [sz1/y] [15 < 18 < 22 > 26 > 30]		;-- should be 2 lines
+	param [sz2/y] [ 7 <  9 < 11 > 13 > 15]		;-- 1 line
+	expect [sz4/y > 50]
+]
+
+;@@ TODO: #3810 requires getting OS default color for tab-panel
+;@@ TODO: #3809 awaits design decisions - what will the proper behavior be?
+;@@ TODO: #3808 awaits design decisions - window/selected or panel/selected?
+;@@ TODO: #3803 awaits design decisions - relation between drop-down/selected and user-defined values
+
+issue #3801 [
+	"view image crash on macOS"
+	should not crash
+
+	offload/timeout [
+		img: make image! 600x400
+		count: 0
+		loop 100 [
+			view/no-wait compose [image (img)]
+			wait 0.01 unview
+			count: count + 1
+		]
+	] 0:1:0
+	count: sync count
+	expect [count = 100]
+]
+
+issue/interactive #3795 [
+	"[View] `on-menu` `event/offset` is not DPI-aware"
+
+	;; logic: compare click and menu-click offsets, should be equal
+	display [
+		do [list: []]
+	    b: box 100x100 #EE00EE20 with [menu: ["a"]]
+	    on-down [append list event/offset]
+	    on-menu [append list event/offset]
+	]
+	click b
+	click/right/async b							;-- invoke menu
+	click b ~at~ [center + 7x7]					;-- click the (only) item
+
+	list: sync list
+	expect [2 = length? list]
+	expect [list/1 = list/2]
+]
+
+issue/interactive #3794 [
+	"[View] Menu mutation bugs future event offsets"
+
+	;; logic: make 2 clicks, compare offsets
+	display [
+		do [list: []]
+		b: box #EE00EE20 with [menu: []]
+		on-alt-down [
+		    append list event/offset
+		    change face/menu reduce [form #"A" - 1 + random 26]
+	    ]
+	]
+	pt1: b ~at~ [center]			;-- save the points as the client offset changes (see issue comment)
+	pt2: pt1 + 7x7
+	click/right/async pt1 wait 1
+	click pt2 wait 1
+	click/right/async pt1 wait 1
+	click pt2 wait 1
+
+	list: sync list
+	expect [2 = length? list]
+	expect [list/1 = list/2]
+]
+
+issue/interactive #3793 [
+	"[View] Unstoppable wheel!!"
+
+	;; logic: do wheel events, see that they are not triggered
+	face:
+		variant 1 [[area 100x20 "a^/b^/c^/d^/e"]]
+		variant 2 [[drop-list 100x20 data ["a" "b" "c" "d" "e" "f"]]]
+		variant 3 [[drop-down 100x20 data ["a" "b" "c" "d" "e" "f"]]]
+		variant 4 [[text-list 100x20 data ["a" "b" "c" "d" "e" "f"]]]
+	display compose [
+		do [
+			list: []
+			insert-event-func evfun: func [_ ev] [if ev/type = 'wheel ['stop]]
+		]
+		(face) focus on-wheel [append list "ROLLED OVER"]
+	]
+	roll-the-wheel up
+	list: sync list
+	expect [empty? list]
+	offload [remove-event-func :evfun]		;-- cleanup
+]
+
+issue/layout #3789 [
+	"[Draw] `qcurv` doesn't work, at all"
+
+	;; it's hard to test that the result is correct without embedding images..
+	;; logic: simply compare it to the buggy (box-like) result (see the issue description)
+
+	bug-box: shoot [
+		base 250x250 draw [
+			scale 10 10 pen linear cyan purple
+			shape [move 5x5 line 20x5 20x20 5x20]
+		]
+	]
+	bug-curv: shoot [
+		base 250x250 draw [
+			scale 10 10 pen linear cyan purple 
+			shape [move 5x5 qcurve 20x5 20x20 qcurv 5x20 line 5x5]
+		]
+	]
+
+	curv1: shoot [
+		base 250x250 draw [		; feeding a single point
+			scale 10 10 pen linear cyan purple 
+			shape [move 5x5 qcurv 20x5 qcurv 20x20 qcurv 5x20 qcurv 5x5 move 5x5]
+		] 
+	]
+	curv2: shoot [
+		base 250x250 draw [		; feeding pairs of points
+			scale 10 10 pen linear cyan purple 
+			shape [move 5x5 qcurv 20x5 20x20 qcurv 5x20 5x5 move 5x5]
+		] 
+	]
+	curv3: shoot [
+		base 250x250 draw [		; feeding a bunch
+			scale 10 10 pen linear cyan purple 
+			shape [move 5x5 qcurv 20x5 20x20 5x20 5x5 move 5x5]
+		] 
+	]
+
+	curv4: shoot [
+		base 250x250 draw [
+			scale 10 10 pen linear cyan purple 
+			shape [move 5x5 qcurve 20x5 20x20 qcurv 5x20 qcurv 5x5]
+		] 
+	]
+	curv5: shoot [
+		base 250x250 draw [
+			scale 10 10 pen linear cyan purple 
+			shape [move 5x5 qcurve 20x5 20x20 qcurv 5x20 5x5]
+		] 
+	]
+
+	expect [curv1 = curv2]
+	expect [curv1 = curv3]
+	expect [curv1 <> bug-box]
+	expect [curv4 = curv5]
+	expect [curv4 <> bug-curv]
+]
+
+;; #3779 -- produced sounds can't be tested
+
+issue/interactive #3776 [
+	"Buttons image property doesn't update on screen"
+
+	top-window: display [
+		do [
+			img: system/words/draw 64x64 [		;-- workaround for #4312
+				fill-pen pattern 32x32 [
+					scale 4 4 pen off
+					fill-pen black box 0x0 4x4 box 4x4 8x8
+					fill-pen white box 0x4 4x8 box 4x0 8x4
+				]
+				box 0x0 64x64
+			]
+			more: reduce [
+				make image! 64x64
+				none
+			]
+		]
+		b: button img [face/image: take more]
+	]
+	s1: shoot top-window
+	click b
+	s2: shoot top-window
+	click b
+	s3: shoot top-window
+	expect [not visually-similar? s1 s2]
+	expect [not visually-similar? s1 s3]
+]
+
+issue/layout #3765 [
+	"[CRASH] on `focus` being set inside `layout`"
+	should not crash
+
+	i1: shoot [do [layout [button focus]]]
+	expect [image? i1]				;-- won't be no image if crashes
+]
+
+issue #3762 [
+	"[CRASH] in `layout/parent/only`"
+	should not crash
+
+	output: offload [
+		w: view/no-wait []
+		layout/only/parent [field] w none
+	]
+	expect [not find output "Error"]
+]
+
+issue/layout #3760 [
+	"Height of text face isn't correctly calculated"
+
+	s1: shoot [text "one^/two^/three^/four" 200 red]
+	s2: shoot [text "one^/two^/three^/four" 200 red white]
+	; expect [s1/size = s2/size]			;-- 'white' should not affect the size
+	;@@ it affects it though, see issue comment; let it produce a warning
+	param [s1/size/y - s2/size/y] [-8 < -2 < 0 > 2 > 8]
+]
+
+issue/compiled #3753 [
+	"[View] CRASH in `set-focus` with field & area on W8+"
+
+	exe: compile/header/release/debug
+		variant 1 [ [view [a: area  on-created [set-focus a] rate 10 on-time [quit]]] ]
+		variant 2 [ [view [a: field on-created [set-focus a] rate 10 on-time [quit]]] ]
+	run/output/wait exe %out3753.txt 10
+	output: read %out3753.txt
+	expect [not find output "Error"]
+]
+
