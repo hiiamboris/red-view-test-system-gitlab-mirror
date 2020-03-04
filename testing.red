@@ -52,7 +52,7 @@ toolset: context [
 			keep [offload sync pull push should settle-down expect-box crashed?]	;-- common words
 			case/all [
 				interactive
-					[keep [display click drag roll-the-wheel shoot close-windows close]]
+					[keep [display click drag roll-the-wheel move-pointer shoot close-windows close]]
 				layout
 					[keep [shoot close-windows]]
 				any [compile compiled]
@@ -229,6 +229,7 @@ toolset: context [
 	shoot: function [
 		"Capture the LAYOUT in a main-worker thread using to-image; return the image"
 		'layout [block! word!] "Layout block or name of a face known to the worker"
+		/real "Capture real appearance (may be overlapped!)"
 		/tight
 		/local top-window
 	][
@@ -240,11 +241,17 @@ toolset: context [
 		]
 		settle-down 1 sec
 		
-		img: offload/return compose [to-image (layout)]
+		; img: offload/return compose [to-image (layout)]
+		unless real [
+			img: offload/return compose [to-image top-window]		;-- to-image doesn't work on bare faces, so shoot the whole window
+		]
 		layout: pull (layout)		;-- sync it, as we require it right now and it can be unset or filled with other data locally
 		#assert [object? :layout]
 		#assert [quacks-like-face? :layout]
-		img: capture-face/with layout img
+		img: either real [
+			capture-face/real layout
+		][	capture-face/with layout img
+		]
 
 		if close? [offload [unview]]
 		#assert [image? img]
@@ -280,7 +287,7 @@ toolset: context [
 			sec secs second seconds [1.0]
 			ms msec millis [1e-3]
 		]
-		t1: now/time/precise
+		t1: now/precise
 		; im: reduce [capture none]
 		im: [#[none] #[none]]
 		im/1: capture/no-save/into im/1
@@ -291,8 +298,8 @@ toolset: context [
 			im/2: capture/no-save/into im/2
 			reverse im
 			any [
-				num <= to float! now/time/precise - t1 + 24:00 % 24:00	;-- out of time
-				3 <= still: either im/1 = im/2 [still + 1][1]			;-- 3 different shots were equal
+				num <= to float! difference now/precise t1		;-- out of time
+				3 <= still: either im/1 = im/2 [still + 1][1]	;-- 3 different shots were equal
 			] 
 		]
 		; im/1
@@ -367,6 +374,14 @@ toolset: context [
 		offload body-of :do-queued-events	;-- let worker process the input (else wheel-up + wheel-down may produce no event at all)
 	]
 
+	move-pointer: function [
+		"Simulate a mouse-move event"
+		offset [pair!] "Screen coordinate"		;-- use ~at~ to target faces/boxes
+	][
+		simulate-input-raw reduce [offset]
+		offload body-of :do-queued-events	;-- let worker process the input (else wheel-up + wheel-down may produce no event at all)
+	]
+
 	;@@ TODO: make issue set-words local; and also synced words local
 	;@@ TODO: inspect any values inside an issue post-failure
 	;@@ TODO: a list of successful and failed issues (latter may be re-tested, or the test process interrupted and continued...)
@@ -381,6 +396,15 @@ toolset: context [
 			ERROR "Unable to find definition for issue (key)"
 		]
 		set [code flags] definition
+		;; log the issue context
+		if pos: find head code set-word! [
+			log-artifact object compose [
+				type: 'context
+				ctx: context? pos/1
+				key: (key)
+			]
+		]
+
 		if flags/interactive [bgnd: display-background do-queued-events]
 		sw-len: offload/return [length? words-of system/words]
 		if 'ok <> catch/name [						;-- wrapper for compiled issues
@@ -556,23 +580,39 @@ toolset: context [
 
 	once running-exes: #()		;-- keep track of started by each issue processes
 
+	running!: object [
+		name: handle: stdout: startup-time: none
+		output: does [all [stdout read stdout]]
+	]
+
 	run: function [
-		"Run an EXE file"
+		"Run an EXE file; return a running! object"
 		exe	[file!]
-		/output out [file!]
+		/no-output "Do not divert stdout to a file"
 		/wait "Wait for completion"
 			period [integer! float! time!]
 	][
-		handle: either output [start-exe/output exe out][start-exe exe]
+		r: make running! [
+			name: copy exe
+			handle: either no-output [
+				start-exe exe
+			][
+				basename: either %.exe = suffix? exe [clear skip tail copy exe -4][copy exe]
+				stdout: #composite %"(basename)-stdout.txt"
+				start-exe/output exe stdout
+			]
+			startup-time: now/precise
+		]
 		key: current-key
 		exes: running-exes/:key
 		unless exes [exes: running-exes/:key: copy []]
-		append exes handle
+		append exes r/handle
 		either wait [
-			stop-exe/max handle period		;-- return once it's down
+			stop-exe/max r/handle period		;-- return once it's down
 		][
 			system/words/wait 1.0		;-- delay until `view` kicks in ;@@ TODO: how to ensure Red script is read & running already?
 		]
+		r
 	]
 
 	finish-exes: function [

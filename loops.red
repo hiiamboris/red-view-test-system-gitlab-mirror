@@ -42,11 +42,11 @@ while-waiting: function [
 	body [block!]
 ][
 	if number? time [time: to time! time]
-	t1: now/time/precise
+	t1: now/precise
 	while cond [
 		if time [
-			t2: now/time/precise
-			dt: t2 - t1 + 24:00 % 24:00
+			t2: now/precise
+			dt: difference t2 t1
 			if dt >= time [return none]
 		]
 		do body

@@ -31,7 +31,7 @@ screenshot: does [capture]		;-- no refinements for it
 
 
 save-capture: function [im [image!]] [
-	#assert [0 < length? im "tuhguhtu"]
+	#assert [0 < length? im "cannot save an empty capture!"]
 	name: #composite %"(current-key)-capture-(timestamp).png"
 	part: skip tail name -4
 	i: 0
@@ -58,7 +58,7 @@ capture: function [
 		se: units-to-pixels se
 	]
 	im: grab-screenshot* im nw attempt [se - nw]
-	#assert [0 < length? im "akakoakskk"]
+	#assert [0 < length? im "empty capture detected!"]
 	unless no-save [
 		save-capture im
 		log-image im
@@ -84,12 +84,10 @@ capture-face: function [
 		pix-ofs: client-offset-of face
 		either window? [
 			pix-sz:  window-size-of wndw					;-- need precise non-rounded size of it
-			pix-ofs: client-offset-of face
-			if whole [
-				brdr: borders-of wndw
-				pix-ofs: pix-ofs - brdr/1
-				pix-sz: pix-sz + brdr/1 + brdr/2
-			]
+			brdr: borders-of wndw
+			either whole
+				[pix-ofs: pix-ofs - brdr/1]					;-- translate client offset to nonclient offset
+				[pix-sz:  pix-sz  - brdr/1 - brdr/2]		;-- contract the capture size
 		][
 			pix-sz: units-to-pixels face/size				;@@ TODO: obtain non-rounded size
 		]
@@ -710,7 +708,7 @@ context [
 		bestbox: function [image area] [
 			#assert [object? area]
 			art/edges: edges: find-edges image
-			xy2: area/size + xy1: area/offset
+			xy2: area/size + xy1: area/offset + any [area/base 0x0]
 			set [prob xy1 xy2]  fit-box  edges  u->p xy1  u->p xy2
 			all [										;-- return none or [offset size]
 				0 <> prob								;-- 0% = no match
@@ -738,7 +736,7 @@ context [
 			if spec/area [			;-- won't be needing the whole image; crop it
 				art/image: image: get-image-part
 					image
-					u->p base: spec/area/offset
+					u->p base: spec/area/offset + any [spec/area/base 0x0]
 					u->p spec/area/size
 			]
 			area: spec				;-- else use offset & size from spec itself
@@ -821,7 +819,7 @@ context [
 		art/image: image: either spec/area [	;-- won't be needing the whole image; crop it
 			get-image-part
 				spec/image
-				u->p spec/area/offset
+				u->p spec/area/offset + any [spec/area/base 0x0]
 				u->p spec/area/size
 		] [spec/image]
 		art/box: box: get-text-box image

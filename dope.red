@@ -332,14 +332,14 @@ clock-each: function [
 	times: make block! 32
 	marks: make block! 32
 	timer: func [x [any-type!] pos [block!]] [
-		t2: now/precise/time
-		dt: 1e3 * to float! t2 - t1 + 24:00 % 24:00			;-- be prepared for day change
+		t2: now/precise
+		dt: 1e3 * to float! difference t2 t1
 		times: change times dt + any [times/1 0.0]
 		marks: change/only marks pos
-		t1: now/precise/time
+		t1: now/precise
 	]
 	loop n: any [n 1] [
-		t1: now/precise/time
+		t1: now/precise
 		trace :timer code
 		times: head times
 		marks: head marks
@@ -451,7 +451,7 @@ eval-results-group: func [
 			][
 				red-log: copy "  Reduction log:"
 				inspect: func [expr [block!] val [any-type!]] [
-					repend red-log ["^/    " pad mold-part/flat/only expr 20 20 " => " mold-part/flat :val 35]
+					repend red-log ["^/    " pad mold-part/flat/only expr 20 20 " => " mold-part/flat :val 40]
 					:val
 				]
 				e: try/all [set/any 'r trace-deep :inspect expr 'ok]

@@ -255,11 +255,13 @@ issue/compiled/interactive #4190 [
 	wndw: find-window-on scrn
 	expect [wndw]
 	expect [pnl: box [500x500 within scrn/wndw]]
-	pnl/offset: pnl/offset + wndw/offset		;@@ TODO: complex paths like scrn/wndw/pnl ?
+	; pnl/offset: pnl/offset + wndw/offset		;@@ TODO: complex paths like scrn/wndw/pnl ?
 	expect [btn: box [within scrn/pnl 80x20]]
-	click btn/size / 2 + btn/offset + pnl/offset	;@@ TODO: let boxes carry an absolute offset too!
-	close wndw		;@@ required when window was not created by the worker?
-	;@@ TODO: check the worker output for crash signs
+	click btn
+	; click btn/size / 2 + btn/offset + pnl/offset	;@@ TODO: let boxes carry an absolute offset too!
+	close wndw
+	; wait 1		;-- let it flush the output
+	expect [not find task/output "Error"]	;-- may crash upon exiting
 ]
 
 ;; TODO: #4189 requires console to send the input prompt to stdout so we can check it (see 4241); otherwise, how to test it? OCR? console buffer grabbing (OS dependent)?
@@ -385,7 +387,7 @@ issue/compiled/interactive #4104 [
 		]
 	]
 
-	run/output exe %4104out.txt
+	task: run exe
 	; settle-down 2 sec
 	scrn: screenshot
 	wndw: find-window-on scrn
@@ -394,8 +396,7 @@ issue/compiled/interactive #4104 [
 	click btn
 	wait 0.3
 	close wndw
-	output: read %4104out.txt
-	expect [output = ":test:^/"]
+	expect [task/output = ":test:^/"]
 ]
 
 issue #4069 [
@@ -429,7 +430,7 @@ issue/compile/interactive #4061 [
 			    ]
 			]
 		]
-		run/output exe %out4061.txt			;@@ TODO: automatically save output? make `exe-output` a reading function?
+		task: run exe
 		; settle-down 2 sec
 		s1: screenshot
 		expect [wndw: find-window-on s1]
@@ -443,8 +444,7 @@ issue/compile/interactive #4061 [
 		s2: screenshot
 		expect [none? find-window-on s2]			;-- it should have disappeared after `unview`
 		; expect [none? box [s2/wndw]]
-		output: read %out4061.txt
-		expect [not find output "WARNING"]
+		expect [not find task/output "WARNING"]
 	]
 
 	variant 2 [	;; crash ;; logic: capture the output, check for an error
@@ -459,7 +459,7 @@ issue/compile/interactive #4061 [
 			    ]
 			]
 		]
-		run/output exe %out4061-2.txt
+		task: run exe
 		scrn: screenshot
 		expect [wndw: find-window-on scrn]
 		click/right wndw
@@ -470,8 +470,7 @@ issue/compile/interactive #4061 [
 		expect [wndw: box [scrn/wndw]]
 		if wndw [close wndw]
 
-		output: read %out4061-2.txt
-		expect [not find output "Runtime Error"]
+		expect [not find task/output "Runtime Error"]
 	]
 ]
 
@@ -615,12 +614,11 @@ issue/compile/interactive #4005 [
 
 	;; logic: it should just show 'alert' window
 	exe: compile/release/debug/header [alert "test"]
-	run/output exe %4005out.txt
+	task: run exe
 	scrn: screenshot
 	expect [wndw: find-window-on scrn]
 	close wndw
-	output: read %4005out.txt						;@@ TODO: auto output capture
-	expect [not find output "Runtime Error"]	;@@ TODO: make a higher level test from this?
+	expect [not find task/output "Runtime Error"]	;@@ TODO: make a higher level test from this?
 ]
 
 issue/interactive #3980 [
@@ -1122,8 +1120,80 @@ issue/compiled #3753 [
 	exe: compile/header/release/debug
 		variant 1 [ [view [a: area  on-created [set-focus a] rate 10 on-time [quit]]] ]
 		variant 2 [ [view [a: field on-created [set-focus a] rate 10 on-time [quit]]] ]
-	run/output/wait exe %out3753.txt 10
-	output: read %out3753.txt
-	expect [not find output "Error"]
+	task: run/wait exe 10
+	expect [not find task/output "Error"]
 ]
+
+issue/layout #3751 [
+	"black color rich-text with fill-pen does not draw correctly"
+
+	;; logic: draw 3 chars, see that they are drawn (buggy version is all white)
+	s: shoot/tight [
+		rich-text draw compose [
+			fill-pen white
+			text 10x10 (rtd-layout [black "█ █ █"])
+		]
+	]
+	gb: find-glyph-boxes s
+	expect [3 * 2 = length? gb]				;@@ TODO: higher-level test than this (`glyph-info` with extractable parameters)
+]
+
+issue/interactive #3741 [
+	"[View] Regression: `on-over` gets an invalid `event/offset` when `away?`"
+
+	;; logic: track the offsets of over event
+	move-pointer 0x0				;-- let it not be under the base initially
+	display [
+		do [list: []]
+		b: base 100x100 on-over [append list event/offset]
+	]
+	move-pointer pos: b ~at~ [center]
+	move-pointer pos - 100x0
+	list: sync list
+	expect [2 = length? list]
+	param [list/1/x] [ 45 <  47 <  50 >  53 >  55]
+	param [list/1/y] [ 45 <  47 <  50 >  53 >  55]
+	param [list/2/x] [-55 < -53 < -50 > -47 > -45]
+	param [list/2/y] [ 45 <  47 <  50 >  53 >  55]
+]
+
+issue/compiled #3735 [
+	"[Crash] in RTD-LAYOUT after RECYCLE"
+	should not crash
+
+	exe: compile/devmode/header [
+		recycle
+		rtd-layout reduce [""]
+	]
+	task: run/wait exe 5
+	expect [not find task/output "Error"]
+]
+
+issue/interactive #3730 [
+	"Can't change attributes of text in VID box"
+	
+	;; logic: display invisible text, make it visible, check the attributes of it
+	display [
+		backdrop black
+		b: box  "| | |"   font-color black font-size 30
+		t: text "| | | |" font-color black font-size 30
+	]
+	offload [
+		b/font/size:  t/font/size: 10			;-- reduce size rather than grow (face size won't grow anyway)
+		b/font/color: t/font/color: green
+	]
+	sb: shoot/real b				;-- use real appearance else it gives correct to-image on W7 whilst being displayed incorrectly
+	st: shoot/real t
+	gb-b: find-glyph-boxes sb		;@@ TODO: higher level tests!
+	gb-t: find-glyph-boxes st
+	expect [2 * 3 = length? gb-b]
+	expect [2 * 4 = length? gb-t]
+	mgs-b: min-glyph-size gb-b
+	mgs-t: min-glyph-size gb-t
+	param [mgs-b/y] [9 < 11 < 13 > 15 > 17]		;-- it's 38px with font=30, 13px with font=10
+	param [mgs-t/y] [9 < 11 < 13 > 15 > 17]
+]
+
+;; #3731 - problem was in react, not in View
+
 

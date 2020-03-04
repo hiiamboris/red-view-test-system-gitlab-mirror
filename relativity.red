@@ -55,8 +55,25 @@ context [
 		xy
 	]
 
-	set 'units-to-pixels func [xy [pair! integer!]] [xy * system/view/metrics/dpi / 96]
-	set 'pixels-to-units func [xy [pair! integer!]] [xy * 96 / system/view/metrics/dpi]
+	set 'units-to-pixels function [xy [pair! integer!]] [
+		ppd: system/view/metrics/dpi / 96.0 		;-- pixels per dot
+		either pair? xy [
+			as-pair
+				round/to xy/x * ppd 1
+				round/to xy/y * ppd 1
+		][	round/to xy * ppd 1
+		]
+	]
+	;; should be careful here not to turn 1 into 0
+	set 'pixels-to-units function [xy [pair! integer!]] [
+		ppd: system/view/metrics/dpi / 96.0 		;-- pixels per dot
+		either pair? xy [
+			as-pair
+				round/to xy/x / ppd 1
+				round/to xy/y / ppd 1
+		][	round/to xy / ppd 1
+		]
+	]
 
 	set 'face-to-window func [
 		"Translate a point in face space into window space"

@@ -10,10 +10,10 @@ clock: function [
 	/times n [integer!] "Repeat N times (default: once)"
 	/local r
 ][
-	t1: now/precise/time
+	t1: now/precise
 	set/any 'r loop any [n 1] code
-	t2: now/precise/time
-	parse form 1e3 * to float! (t2 - t1 + 24:00 % 24:00) [0 3 [opt #"." skip] opt [to #"."] a:]
+	t2: now/precise
+	parse form 1e3 * to float! difference t2 t1 [0 3 [opt #"." skip] opt [to #"."] a:]
 	print [head clear a "ms^-" mold/flat code]
 	:r
 ]

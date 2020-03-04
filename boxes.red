@@ -311,6 +311,8 @@ boxes-ctx: context [
 		bgnd
 	]
 
+	;@@ TODO: warning when used not on a solid background (e.g. when there's a frame) - or better: make it ignore that frame
+	;;   it is possible to detect text by finding an area where colorsets are changing often
 	;@@ TODO: maybe make some boxes lower (to distinguish upper/lower case letters)
 	;; should I provide xy1,xy2? or just crop the image?
 	set 'find-glyph-boxes function [im [image!] /local bgnd x1 x2] [
@@ -343,6 +345,10 @@ boxes-ctx: context [
 			]
 			prev: occupied
 		]
+		if occupied [			;-- last line was occupied
+			y-range/2: im/size/y
+		]
+		if y-range/1 > y-range/2 [return copy []]	;-- no text detected
 
 		prev: no
 		x-ranges: clear []
@@ -412,6 +418,8 @@ boxes-ctx: context [
 			]
 		]
 
+		#assert [x-range/1 <= x-range/2]
+		#assert [y-range/1 <= y-range/2]
 		reduce [
 			as-pair x-range/1 y-range/1
 			as-pair x-range/2 y-range/2
@@ -425,7 +433,7 @@ boxes-ctx: context [
 		min-dist: 1e10
 		max-dist: -1
 		foreach [s2 e2] skip boxes 2 [
-			min-dist: min min-dist dist: s2/x - e1/x
+			min-dist: min min-dist dist: s2/x + 1 - e1/x
 			max-dist: max max-dist dist
 			e1: e2
 		]
@@ -438,7 +446,7 @@ boxes-ctx: context [
 		max-area: -1
 		min-size: max-size: none
 		foreach [s e] boxes [
-			size: e - s
+			size: e - s + 1x1
 			area: size/x * size/y
 			if area < min-area [min-area: area  min-size: size]
 			if area > max-area [max-area: area  max-size: size]
