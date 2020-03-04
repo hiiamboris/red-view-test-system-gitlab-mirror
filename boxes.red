@@ -311,6 +311,15 @@ boxes-ctx: context [
 		bgnd
 	]
 
+
+	{
+		Warning: 'text' is not a strict category. `text "█"` is indistinguishable from `base NxM`
+		Current implementation just finds the area covered by anything-but-background.
+		Ideally I would measure median color of each X and Y line, then subtract that from the image
+		to emphasize the (noisy) text vs background, but that's not a top priority.
+		Just use shoot/tight or any other means to discard the frame from the image and it'll work.
+	}
+
 	;@@ TODO: warning when used not on a solid background (e.g. when there's a frame) - or better: make it ignore that frame
 	;;   it is possible to detect text by finding an area where colorsets are changing often
 	;@@ TODO: maybe make some boxes lower (to distinguish upper/lower case letters)
@@ -467,14 +476,16 @@ boxes-ctx: context [
 	]
 
 	set 'min-glyph-size function [boxes [block!]] [
-		pixels-to-units first min+max-glyph-size boxes
+		r: first min+max-glyph-size boxes
+		all [r  pixels-to-units r]
 	]
 
 	set 'max-glyph-size function [boxes [block!]] [
-		pixels-to-units second min+max-glyph-size boxes
+		r: second min+max-glyph-size boxes
+		all [r  pixels-to-units r]
 	]
 
-	set 'equally-sized? function [boxes [block!]] [
+	set 'glyphs-equally-sized? function [boxes [block!]] [
 		assert [not empty? boxes]		;-- undefined for that
 		set [s e] boxes
 		size: e - s

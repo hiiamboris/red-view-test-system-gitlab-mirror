@@ -233,6 +233,7 @@ toolset: context [
 		/tight
 		/local top-window
 	][
+		#assert ['compose <> layout]		;-- a likely shoot compose [..] error - use shoot (compose [..])
 		unless word? layout [
 			close?: yes
 			; top-window: display layout

@@ -19,6 +19,10 @@ abs: :absolute
 
 with: func [ctx [object! any-function!] code [block!]] [bind code :ctx]
 
+;; declarative chainable pair comparison: 1x1 .<. 2x2 .<. 3x3 => 3x3 (truthy) - because `within?` messes my head up
+.<.:  make op! func [a [pair!] b [pair!]] [all [a/1 <  b/1  a/2 <  b/2  b]]
+.<=.: make op! func [a [pair!] b [pair!]] [all [a/1 <= b/1  a/2 <= b/2  b]]
+
 once: func [
 	"Set value of W to V only if it's unset"
 	:w [set-word!]

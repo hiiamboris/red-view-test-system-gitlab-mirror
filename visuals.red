@@ -4,7 +4,7 @@ Red [
 	license: 'BSD-3
 ]
 
-; #include %dope.red
+#include %dope.red
 #include %boxes.red
 
 ; #where's-my-error?
@@ -315,7 +315,8 @@ visually-similar?: function [
 	im2 [image!]
 	/with fuzz [percent! float!] "Comparison fuzziness (0% = strict, default = 10%)"
 ][
-	#assert [im1/size = im2/size]
+	; #assert [im1/size = im2/size]
+	unless im1/size = im2/size [ERROR "Images are expected to be of equal size, got (im1/size) and (im2/size)"]
 	default fuzz: [10%]
 	if fuzz = 0% [fuzz: 0.01%]								;-- no zero division
 	im1: blur3x3 im1										;-- blur images to lessen the effect of image offsets due to possible rounding errors
@@ -463,6 +464,23 @@ explore-artifact: function [art [object!]] [
 		]
 	]
 	explore-value art
+]
+
+
+glyphs-on: function [img [image!]] [
+	bxs: find-glyph-boxes img
+	#assert [block? bxs]
+	#assert [even? length? bxs]
+
+	object compose [
+		found?: not empty? bxs
+		count: (length? bxs) / 2
+		min-size:		min-glyph-size		bxs
+		max-size:		max-glyph-size		bxs
+		min-distance:	min-glyph-distance	bxs
+		max-distance:	max-glyph-distance	bxs
+		equally-sized?:	all [found? glyphs-equally-sized? bxs]
+	]
 ]
 
 

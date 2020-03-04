@@ -326,9 +326,9 @@ issue/layout #4158 [
 	shot: shoot [backdrop white rich-text data [font ["Verdana" 12] ["IIIIII^-IIIIII^-IIIIII"]]]
 	;@@ TODO: how reliable this specific text is on other platforms, considering other fonts/metrics in use?
 	;@@ should this test try to find such text that will not be tab-spaced?
-	boxes: find-glyph-boxes shot
-	expect [18 * 2 = length? boxes]
-	expect [(min-glyph-distance boxes) + 4 > max-glyph-distance boxes]		;@@ 4px is not a tab - but how big a tab should be?
+	glyphs: glyphs-on shot
+	expect [18 = glyphs/count]
+	expect [glyphs/min-distance + 4 > glyphs/max-distance]		;@@ 4px is not a tab - but how big a tab should be?
 ]
 
 issue #4123 [		;-- does not require any windows really
@@ -369,10 +369,10 @@ issue/layout #4116 [
 		do [f: make font! [ name: "Verdana" size: 30 ]]
 		canvas: base 300x150 white draw [font f pen black text 50x50 "OOOOO"]
 	]
-	boxes: find-glyph-boxes shot
-	expect [5 * 2 = length? boxes]				;@@ TODO: higher-level tests than this and than glyph-boxes; declarative!!
-	expect [equally-sized? boxes]
-	expect [within? min-glyph-size boxes 20x20 10x20]	;@@ TODO: how reliable these sizes are across platforms?
+	glyphs: glyphs-on shot
+	expect [5 = glyphs/count]
+	expect [glyphs/equally-sized?]
+	expect [20x20 .<. glyphs/min-size .<. 30x40]	;@@ TODO: how reliable these sizes are across platforms?
 ]
 
 ;; #4113 - needless to test - more than covered by base-test
@@ -1134,8 +1134,8 @@ issue/layout #3751 [
 			text 10x10 (rtd-layout [black "█ █ █"])
 		]
 	]
-	gb: find-glyph-boxes s
-	expect [3 * 2 = length? gb]				;@@ TODO: higher-level test than this (`glyph-info` with extractable parameters)
+	gs: glyphs-on s
+	expect [3 = gs/count]
 ]
 
 issue/interactive #3741 [
@@ -1184,16 +1184,74 @@ issue/interactive #3730 [
 	]
 	sb: shoot/real b				;-- use real appearance else it gives correct to-image on W7 whilst being displayed incorrectly
 	st: shoot/real t
-	gb-b: find-glyph-boxes sb		;@@ TODO: higher level tests!
-	gb-t: find-glyph-boxes st
-	expect [2 * 3 = length? gb-b]
-	expect [2 * 4 = length? gb-t]
-	mgs-b: min-glyph-size gb-b
-	mgs-t: min-glyph-size gb-t
-	param [mgs-b/y] [9 < 11 < 13 > 15 > 17]		;-- it's 38px with font=30, 13px with font=10
-	param [mgs-t/y] [9 < 11 < 13 > 15 > 17]
+	gs-b: glyphs-on sb
+	gs-t: glyphs-on st
+	expect [3 = gs-b/count]
+	expect [4 = gs-t/count]
+	param [gs-b/min-size/y] [9 < 11 < 13 > 15 > 17]		;-- it's 38px with font=30, 13px with font=10
+	param [gs-t/min-size/y] [9 < 11 < 13 > 15 > 17]
 ]
 
 ;; #3731 - problem was in react, not in View
+;; #3726 - see test-focus-events.red custom test
 
+;; @@ TODO: #3727 - requires some fonts installed on the system, how to automate?
+;; @@ TODO: #3726 - requires some fonts installed on the system, how to automate?
 
+issue/layout #3725 [
+	"[View] `draw [text ...]` on layered base face applies DPI-factor twice"
+
+	;; logic: display text using various methods, compare
+	;; this also suffers from #4253 bug, displaying "A" or "AB" instead of "ABC"
+	init: [
+		backdrop white
+		;; use `set` or it will crash when syncing the font back
+		do [set 'font1 make font! [name: system/view/fonts/fixed size: 30 color: black]]
+	]
+	;; using shoot/real as `to-image` conceals the double zoom effect!
+	gs1: glyphs-on s1: shoot/real (compose [
+		(init)
+		base 120x80 "A B C" white left top font font1
+	])
+	gs2: glyphs-on s2: shoot/real (compose [
+		(init)
+		base 120x80 white draw [font font1 text 0x0 "A B C"]
+	])
+	gs3: glyphs-on s3: shoot/real (compose [
+		(init)
+		base 120x80 white draw [text 0x0 "A B C"]
+	])
+	gs4: glyphs-on s4: shoot/real (compose [
+		(init)
+		box 120x80 "A B C"       left top font font1
+	])
+	gs5: glyphs-on s5: shoot/real (compose [
+		(init)
+		box 120x80        draw [font font1 text 0x0 "A B C"]
+	])
+	gs6: glyphs-on s6: shoot/real (compose [
+		(init)
+		box 120x80        draw [text 0x0 "A B C"]
+	])
+
+	expect [visually-similar? s1 s2]		;-- base: text vs draw
+	expect [visually-similar? s4 s5]		;-- box:  text vs draw
+	expect [visually-similar? s1 s4]		;-- base vs box text
+	expect [visually-similar? s2 s5]		;-- base vs box draw
+	expect [visually-similar? s3 s6]		;-- base vs box draw
+
+	expect [3 = gs1/count]			;-- all letters were displayed, none eaten?
+	expect [3 = gs2/count]
+	expect [3 = gs3/count]
+	expect [3 = gs4/count]
+	expect [3 = gs5/count]
+	expect [3 = gs6/count]
+	
+	;; proper big height: 26px, small (draw default): 10px
+	param [gs1/min-size/y] [20 < 22 < 26 > 30 > 32]
+	param [gs2/min-size/y] [20 < 22 < 26 > 30 > 32]
+	param [gs3/min-size/y] [ 7 <  8 < 10 > 12 > 13]
+	param [gs4/min-size/y] [20 < 22 < 26 > 30 > 32]
+	param [gs5/min-size/y] [20 < 22 < 26 > 30 > 32]
+	param [gs6/min-size/y] [ 7 <  8 < 10 > 12 > 13]
+]
