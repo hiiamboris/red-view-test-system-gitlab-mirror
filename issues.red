@@ -1255,3 +1255,120 @@ issue/layout #3725 [
 	param [gs5/min-size/y] [20 < 22 < 26 > 30 > 32]
 	param [gs6/min-size/y] [ 7 <  8 < 10 > 12 > 13]
 ]
+
+issue/interactive #3724 [
+	"[View] `screen/*/font` assignment breaks the code flow"
+
+	;; logic: check that on-created event doesn't fork with screen/font: assignment
+	display [
+		do [list: ""]
+		style puddle: base on-created [
+			append list ">"
+			system/view/screens/1/font: make font! []
+			append list "<"
+		]
+		puddle puddle
+	]
+	expect [list = "><><"]			;-- ">><<" is a bug
+]
+
+issue/interactive #3723 [
+	"[View] leftover font objects are spawning faces uncontrollably"
+
+	;; logic: create 2 bases, verify that only 2 were created
+	offload [
+		system/view/VID/styles/bomb: [
+			template: [
+				type: 'base
+				font: make font! []
+				actors: [
+					on-created: func [f] [
+						append list "+"
+						system/view/screens/1/font: copy f/font  ;-- this is the culprit line
+					]
+					on-down: function [f e] [
+						append f/parent/pane make-face 'bomb
+					]
+				]
+			]
+		]
+	]
+
+	top-window: display [
+		size 200x100
+		do [list: ""]
+		b: bomb cyan 50x50
+	]
+	click b
+	close top-window
+	list: sync list
+	expect [list = "++"]
+	
+	offload [remove/key system/view/VID/styles 'bomb]	;-- cleanup
+]
+
+issue/interactive #3722 [
+	"[View] `event/window` returns a wrong face under very specific circumstances"
+	
+	display [
+		do [list: []]
+		b: base #FF007001 on-down [append list event/window/type]
+	]
+	click b
+	list: sync list
+	expect [list = [window]]		;-- [base] is a bug
+]
+
+;; #3714 - should be tested in quick-test as a general regression test
+
+issue #3713 [
+	"Malignant output from react/link"
+
+	;; logic: make it throw an error during react/linked reaction; check the output length
+	output: toolset/offload/silent [
+		view [
+			base with [
+				react/link/later func [f p] [f/offset/y: p/offset/y load ")"] [self parent]
+			] rate 3 on-time [unview]
+		]
+	]
+	param [length? output] [50 < 200 < 600 > 1000 > 1200]
+]
+
+issue/interactive #3693 [
+	"[View] actors format inconsistency between VID and make-face"
+
+	;; logic: track events, 'actors' type (object!) & contents (should merge template & layout)
+	offload [
+		system/view/VID/styles/square3693: [
+			template: [
+				type: 'base
+				color: green
+				size: 100x100
+				actors: [on-created: func [f e] [append list 'created!]]
+			]
+		]
+		down-handler: function [f e] [
+			append append append list
+				'clicked!
+				type?/word f/actors
+				sort words-of f/actors
+			append f/parent/pane f2: make-face/offset 'square3693 f/offset + 110x0
+			append append list
+				type?/word f2/actors
+				sort words-of f2/actors
+		]
+	]
+
+	display [
+		size 400x150
+		do [list: []]
+		sq: square3693 on-down :down-handler
+	]
+	click sq
+	list: sync list
+	expect [list = [created! clicked! object! on-created on-down created! object! on-created]]
+
+	offload [remove/key system/view/VID/styles 'square3693]		;-- cleanup
+]
+
