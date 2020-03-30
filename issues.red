@@ -122,7 +122,7 @@ issue/layout #4238 [
 	]
 
 	expect [base: box [at shot center middle 100x100 > 70% all red]]
-	expect [fld/size/x > 50]
+	expect [fld/size/x > 50]		;-- just a paranoid check
 	expect [box [at shot/base fld/offset fld/size > 90% all blue]]
 ]
 
@@ -130,15 +130,15 @@ issue/layout #4238 [
 
 issue/interactive #4226 [
 	"[View] FIELD is not draggable on macOS"
+	should not error out
 
 	;; logic: drag field, see if it moved
-	should not error out		;@@ TODO: check worker's (out of order) output for errors
-	w: display [size 200x50 fld: field loose]
-	s1: shoot w
+	top-window: display [size 200x50 fld: field loose]
+	s1: shoot top-window
 	o1: fld/offset
 	expect [box [at s1 fld/offset fld/size]]
 	drag fld [right by 20]
-	s2: shoot w
+	s2: shoot top-window
 	fld: sync fld
 	expect [fld/offset/y = o1/y]
 	param  [fld/offset/x - o1/x] [17 < 18 < 20 > 22 > 23]
@@ -151,10 +151,12 @@ issue/interactive #4221 [		;-- /interactive to have DISPLAY
 	"[View] Screenshots do not contain layered (alpha-enabled) windows"
 
 	;; logic: make a semi-transparent window, compare built-in and Red screenshots
-	display [box #FF00FF50]
+	display [backdrop white b: box #FF00FF50]
 	s1: to-image system/view/screens/1
 	log-image s1
 	s2: screenshot
+	s1: capture-face/whole/with b s1		;-- exclude irrelevant areas, esp. the taskbar
+	s2: capture-face/whole/with b s2
 	expect [s1 = s2]
 ]
 
@@ -328,15 +330,17 @@ issue/layout #4158 [
 	;@@ should this test try to find such text that will not be tab-spaced?
 	glyphs: glyphs-on shot
 	expect [18 = glyphs/count]
-	expect [glyphs/min-distance + 4 > glyphs/max-distance]		;@@ 4px is not a tab - but how big a tab should be?
+	param [glyphs/max-distance - glyphs/min-distance] [4 < 6 < 20 > 80 > 100]		;@@ 4px is not a tab - but how big a tab should be?
 ]
 
 issue #4123 [		;-- does not require any windows really
 	"[VID] When `style` is set to certain type, further styles can't be defined"
 	should not error out
 
-	style: 30%
-	layout [style s1: base red style s2: base blue s1 s2]
+	offload [
+		style: 30%
+		layout [style s1: base red style s2: base blue s1 s2]
+	]
 ]
 
 issue #4118 [
@@ -641,7 +645,7 @@ issue/interactive #3980 [
 	expect [clicked?]
 ]
 
-issue/deadlock/interactive #3974 [
+issue/interactive #3974 [
 	"[view] not response at second run `view [button {test}]` on macOS"
 	should not hang
 
@@ -863,8 +867,8 @@ issue/layout #3814 [
 issue/layout #3813 [
 	"[Draw] ignores matrix commands on rich-text surface"
 
-	s1: shoot [
-		base white 100x100 draw [			;-- I'm not testing `base` here, supposing that it's working
+	template: [
+		white 100x100 draw [
 			pen blue
 			clip 0x0 50x50
 			translate 10x10
@@ -874,17 +878,9 @@ issue/layout #3813 [
 			text 0x0 "X"
 		]
 	]
-	s2: shoot [
-		rich-text white 100x100 draw [
-			pen blue
-			clip 0x0 50x50
-			translate 10x10
-			rotate 10 0x0
-			scale 2 2
-			box 0x0 60x20
-			text 0x0 "X"
-		]
-	]
+
+	s1: shoot (compose [base (template)])			;-- I'm not testing `base` here, supposing that it's working
+	s2: shoot (compose [rich-text (template)])
 	expect [visually-similar? s1 s2]
 ]
 
@@ -1372,3 +1368,900 @@ issue/interactive #3693 [
 	offload [remove/key system/view/VID/styles 'square3693]		;-- cleanup
 ]
 
+issue/layout #3691 [
+	"Color disabled in rich-text data"
+
+	s: shoot [rich-text 40x40 data [s [red " █ █"]]]
+	param [amount-of [red on s]] [1% < 1.5% < 2.5% > 5% > 6%]	;-- will be black if buggy
+]
+
+issue/interactive #3682 [	;-- interactive to make it exclusive so no more windows are open
+	"[View] `do-events` isn't considering the absence of windows"
+
+	output: offload/silent [
+		unview/all
+		do-events
+	]
+	expect [not find output "Error"]
+]
+
+issue/interactive #3677 [		;@@ TODO: finish this one - it so heavily suffers from #4291 that it's impossible to test!!
+	"image doesn't move with group-box"
+
+	;; logic: move the group-box, see if the sub-face has moved
+	offload [img: make image! reduce [100x100 red]]
+	top-window: display
+		variant 1 [[
+			backdrop white  size 400x200
+			gb: group-box loose [b: button [gb/offset/x: 100] i: image img]
+		]]
+		variant 2 [[
+			backdrop white  size 400x200
+			gb: group-box loose [b: button [gb/offset/x: 100] i: base #FF000001]
+		]]
+	s: shoot/real top-window
+	expect [box [around s/i > 90% almost red]]
+	click b
+	i: sync i
+	s: shoot/real top-window
+	expect [box [around s/i > 90% almost red]]
+]
+
+issue #3675 [
+	"[View] `to-image` can't shoot an image face"
+
+	;; not using `shoot` here as it's not guaranteed to resort to `to-image`
+	s: offload/return [
+		to image! view/no-wait [backdrop black image 50x50 rate 3 on-time [unview]]
+	]
+	expect [s]
+	expect [box [50x50 within s 100% all white]]
+]
+
+issue #3668 [
+	"VID `default` overruns provided text"
+	
+	txt: offload/return [
+		view [
+			field "Provided" default 'Default
+			rate 3 on-time [txt: face/text unview/only event/window]
+		]
+		txt
+	]
+	expect [txt = "Provided"]
+]
+
+issue #3661 [
+	"Screen grabbing isn't DPI aware yet"
+	
+	sz1: offload/return [i: to image! system/view/screens/1  i/size]
+	i2: screenshot
+	expect [sz1 = i2/size]
+]
+
+issue/interactive #3656 [			;-- planned to be fixed in 0.9.x
+	"access violation on setting PANE facet to non-SERIES! value"
+	should not crash	;@@ TODO: should this produce an automatic main-worker/alive? test at the end ? (in case `click` does not detect it)
+						;@@ TODO: also ensure all crash-tests run in an exclusive mode (not parallelized)
+
+	display [b: button [face/pane: 'boom]]
+	click b
+]
+
+issue/interactive #3619 [
+	"access violation on probing of EVENT/PICKED from incorrectly specified MENU facet"
+	should not crash
+
+	variant 1 [
+		display [
+		    p: panel
+		        with [menu: ["abcdef"]]
+		        on-menu [r: event/picked]
+		]
+		click/right/async p
+		click p ~at~ [center + 7x7]
+	]
+	variant 2 [
+		top-window: display/with [
+			at 0x0 b: base
+		    on-menu [r: event/picked]
+		][	menu: ["abcdef"]
+		]
+		click b ~at~ [left top + 20x-10]		;@@ TODO: how portable this layout is? will menu item always stay above the base?
+	]
+	r: sync r
+	expect [none? r]
+]
+
+;; #3580 - layout part should rather be tested with #4321 tests
+;@@ TODO: if #3580 fix produces any new tests, add them here
+
+;; #3576 does not require a test
+
+issue #3564 [
+	"DRAW re-orders BOX coordinates"
+
+	spec: [box 10x0 20x10 box 20x0 10x10]
+	x: offload/return compose/only [
+		draw 100x100 x: (spec)
+		x
+	]
+	expect [x = spec]		;-- becomes 10x0 20x10 in buggy version
+]
+
+issue/interactive #3563 [
+	"Line-breaks in area on Windows add to calculated length 1 for each line-break"
+
+	;; logic: select till the end; last char's index should equal text length
+	variant 1 [
+		top-window: display [
+			do [sel: none]
+			ar: area "1^/2^/3" 100x100 on-select [sel: face/selected]
+		]
+		drag ar ~at~ [top + 5] ar ~at~ [bottom - 10]	;-- multiline selection
+		sel: sync sel
+		expect [sel/2 = length? "1^/2^/3"]
+	]
+
+	;; logic: select till the end; last char's index should equal text length
+	variant 2 [
+		top-window: display [
+			do [sel: none]
+			ar: area "12345^/" 100x100 on-select [sel: face/selected]
+		]
+		click/double ar ~at~ [top left + 7x7]	;-- select word only
+		sel: sync sel
+		expect [sel = 1x5]
+	]
+]
+
+;; #3557 does not require a test
+;; #3546 - dismissed
+
+issue/layout #3545 [
+	{GUI displays the word "Button" after a checkbox on macOS}
+
+	s1: shoot [check 100]
+	s2: shoot [check 100 ""]
+	expect [s1 = s2]
+]
+
+issue/interactive #3543 [
+	"odd behavior of the layout on macOS"
+
+	;; logic: click the button 2 times - if it becomes obstructed, it won't react the 2nd time
+	display [
+		do [list: []]
+		tools: panel []
+		return
+		at 0x50 area: area 210x200
+		at 150x0 h: button "hide" [
+			append list h/text
+			tools/visible?: not tools/visible?
+			either h/text = "hide" [
+				area/offset/y: area/offset/y - 50
+				tools/parent/size/y: tools/parent/size/y - 50
+				h/text: "show"
+			][
+				h/text: "hide"
+				area/offset/y: area/offset/y + 50
+				tools/parent/size/y: tools/parent/size/y + 50
+			]
+		]
+	]
+	click h
+	wait 1			;-- no double clicks!
+	click h
+	list: sync list
+	expect [list = ["hide" "show"]]
+]
+
+issue/interactive #3542 [
+	"The rich-text face is not updated when changing its text facet"
+
+	;; logic: trigger face changes by moving pointer; verify that they occurred
+	move-pointer 0x0
+	display [
+		t: rich-text "Simple example here" 
+	    with [data: compose [1x6 bold 16x7 250.0.0]] 
+	    on-over [
+	        change/part at face/text 16 pick ["away" "over"] event/away? tail face/text 
+		]
+	]
+	s1: shoot t
+	move-pointer t ~at~ [center]
+	s2: shoot t
+	move-pointer 0x0
+	s3: shoot t
+	expect [s1 <> s2]
+	expect [s1 <> s3]
+	expect [s2 <> s3]
+]
+
+;;@@ TODO: 3530 - this one will be hard to test automatically; may require recording & replay of user input, and analysis of all frames
+
+;; #3526 - I couldn't reproduce the bug with any build
+
+;; #3504 - a draw issue, should be tested in quick-test
+
+issue #3486 [
+	"Smooth cubic bezier `curv` (in `shape` dialect) after another `curv` not smooth"
+
+	i: draw 250x250 [
+		scale 0.5 0.5
+		line-width 10
+		shape [
+			move 10x10
+			curv 0x500 250x250 250x490 490x250 
+			move 10x10
+		] 
+	]
+	i1: get-image-part i xy: 120x80  200x120 - xy		;-- should contain the curve
+	i2: get-image-part i xy: 135x125 180x250 - xy		;-- should be white
+	i3: get-image-part i xy: 150x165 250x250 - xy		;-- should be white
+	expect [10% < amount-of [somewhat black on i1]]
+	expect [80% < amount-of [all white on i1]]
+	expect [100% = amount-of [all white on i2]]
+	expect [100% = amount-of [all white on i3]]
+]
+
+issue/layout #3473 [
+	"About diaglog with wrong background in Red gui console"
+
+	shot: shoot/real [
+		size 200x200 backdrop coal
+		text font-color white "x" 150x150
+	]
+	expect [99% < amount-of [coal on shot]]
+]
+
+issue/interactive #3466 [
+	"invalid window positioning after it has been minimized+restored"
+
+	top-window: display [backdrop black image]
+	s1: shoot/real top-window
+	minimize top-window
+	restore top-window
+	s2: shoot/real top-window
+	expect [s1 = s2]
+]
+
+issue/interactive #3465 [
+	"transparent `base` won't render text with `to-image`"
+
+	top-window: display [
+		backdrop white b: box glass black "text text"
+	]
+	img: offload/return [to image! top-window]		;-- use raw `to-image` instead of `shoot` here
+	expect [image? :img]
+	expect [not image-isochromatic? img]
+]
+
+issue/layout #3448 [
+	"VID: system colors override in a panel"
+
+	;; logic: compare colorsets within a panel and without it
+	s1: shoot [text font-name "Verdana" font-size 20 "ooo u ooo oo ooo u oooo"]
+	g1: glyphs-on s1
+	expect [17 = g1/count]
+
+	s2: shoot [panel [text font-name "Verdana" font-size 20 "ooo u ooo oo ooo u oooo"]]
+	g2: glyphs-on s2
+	expect [17 = g2/count]
+
+	s3: shoot [
+		do [clr: system/view/metrics/colors/text]
+		panel [text clr font-name "Verdana" font-size 20 "ooo u ooo oo ooo u oooo"]		;-- both text and background of the same color
+	]
+
+	expect [    matching-colorsets? s1 s2 10%]		;-- fails if text color is not applied inside a panel
+	expect [not matching-colorsets? s2 s3 10%]		;-- fails if background is not applied
+]
+
+
+;; #3446 - covered by test #3563
+
+issue #3445 [
+	"draw `line` gradient issues"
+
+	;; logic: rely on working `shape` sub-dialect
+	i1: draw 200x200 [line-width 20 pen linear blue red        line 9x9 190x190  circle 99x99 90 ]
+	i2: draw 200x200 [line-width 20 pen linear blue red shape [line 9x9 190x190] circle 99x99 90 ]
+
+	i3: draw 200x200 [line-width 20 pen linear blue red circle 99x99 40        line 9x9 190x190  ]
+	i4: draw 200x200 [line-width 20 pen linear blue red circle 99x99 40 shape [line 9x9 190x190] ]
+
+	i5: draw 250x250 [line-width 20 pen linear cyan purple box 10x10 50x50            curve 10x10 240x10 240x240 ]
+	i6: draw 250x250 [line-width 20 pen linear cyan purple box 10x10 50x50 shape [move 10x10 curv 240x10 240x240 move 10x10] ]
+
+	i7: draw 250x250 [line-width 20 pen linear cyan purple            curve 10x10 240x10 240x240 ]
+	i8: draw 250x250 [line-width 20 pen linear cyan purple shape [move 10x10 curv 240x10 240x240 move 10x10] ]
+
+	expect [i1 = i2]
+	expect [i3 = i4]
+	expect [i5 = i6]
+	expect [i7 = i8]
+]
+
+issue #3433 [
+	"draw `fill-pen` isn't being reset properly"
+
+	slice: [		;-- this should not affect the final result (it does on the buggy builds)
+		fill-pen red
+		fill-pen radial glass blue glass
+	]
+	proto: [
+		pen off
+		scale (s: 20) (s)
+
+		(slice)
+		fill-pen red
+		box 0x0 (b / s)
+		fill-pen radial glass blue glass
+		box 0x0 (b / s)
+	]
+	s1: draw b: 200x200 compose/deep proto			;-- with the slice
+	slice: []
+	s2: draw b: 200x200 compose/deep proto			;-- without it
+	expect [s1 = s2]
+]
+
+issue #3432 [
+	"regression: default `draw` matrix is not an identity matrix"
+
+	;; logic: red box should totally overlap the blue box, so no blue color is expected
+	im: draw 400x400 [line-width 5 pen blue box 10x10 190x190 reset-matrix pen red box 10x10 190x190]
+	expect [0% = amount-of [blue on im]]
+]
+
+issue/interactive #3430 [
+	"invisible window appears when using the alpha channel"
+	;@@ TODO: this test is only relevant to W7, and Alt+F4 may not make any sense on other platform
+	;;        so either use platform-specific key combos or automatically succeed on those platforms
+
+	top-window: display [base 100x100 focus #FF00FF]
+	s1: shoot/real/whole top-window
+	sim-key/mods F4 [alt]
+	top-window: sync top-window
+	expect [none? top-window/state]			;-- closed after Alt-F4 ? (should always succeed)
+	
+	top-window: display [base 100x100 focus #FF00FF01]
+	s2: shoot/real/whole top-window
+	sim-key/mods F4 [alt]
+	top-window: sync top-window
+	expect [none? top-window/state]			;-- closed after Alt-F4 ? (detects the bug)
+	
+	expect [visually-similar? s1 s2]		;-- this may also detect the inactive title bar thing; or may not - depends on title bar colors
+]
+
+issue/interactive #3421 [
+	"read-clipboard stops working after view/unview"
+
+	;; logic: second read-clipboard fails in the issue report
+	r1: offload/return [
+		write-clipboard "test"
+		read-clipboard
+	]
+	display [b: button "ok" [unview]]
+	click b
+	r2: offload/return [read-clipboard]
+	expect [r1 = "test"]
+	expect [r2 = "test"]
+]
+
+issue/interactive #3420 [
+	"Bug: set-focus crashes console and compiled script, when closing popup window"
+	should not crash
+
+	;; I've no idea why this layout is so complex, but I couldn't reproduce the crash on W7 in old builds
+	display [
+	    panel [
+	        f1: field 200x20 "Hello, I am assisting with crash test"
+	        return
+	        b1: button "Press Me First" [
+	            view/no-wait [
+	                b3: button "First step to Crash" [
+	                    set-focus f1
+	                    unview
+	                ]
+	            ]
+	        ]
+	        b2: button "Press Me Second" [
+	            view/no-wait [
+	                text "Do you think this will cause crash?"
+	                return
+	                b4: button "Yes" [
+	                    unview
+	                ]
+	            ]
+	        ]
+	    ]
+	]
+	click b1
+	b3: sync b3
+	click b3
+	click b2
+	b4: sync b4
+	click b4		;-- during this it's supposed to crash...
+]
+
+;; #3415 - unfortunately the author never expressed what "image loses something" means.. can't test it
+;; #3401 - dismissed; never reproduced
+
+issue/interactive #3400 [
+	"field does not work properly when view its parent window twice"
+
+	offload [
+		pin: ""
+		pin-dlg: has [dlg][
+			dlg: layout [
+				pin-show: field "" btn: button "Add" [
+					append pin-show/text "*"
+					pin: copy pin-show/text
+				]
+			]
+			wnd: view/no-wait/flags dlg 'modal
+		]
+		pin-dlg
+	]
+	click btn: sync btn
+	s1: shoot/real btn		;-- this should have a single asterisk
+	close wnd: sync wnd
+
+	offload [
+		clear pin
+		pin-dlg
+	]
+	click btn: sync btn
+	s2: shoot/real btn		;-- this should have two asterisks
+	close wnd: sync wnd
+	pin: sync pin
+
+	expect [s1 <> s2]
+	expect [pin = "**"]
+]
+
+issue #3394 [
+	"Copy part of a face gives an error"	;-- incorrect title
+
+	img1: draw 81x81 [circle 40x40 30]
+	img2: copy/part at img1 0x0 81x81		;-- this failed on MacOS
+	expect [img2 = img1]
+]
+
+issue/interactive #3353 [
+	"REPLACE on text-list data corrupts the display"
+
+	;; logic: do a `replace`, shoot, compare to a 'ready' layout
+	display [
+		tl1: text-list data ["a 1" "b 1"]
+		b1: button [replace tl1/data/1 "1" "456"]
+	]
+	click b1
+	s1: shoot tl1
+
+	display [
+		tl2: text-list data ["a 456" "b 1"]
+		b2: button focus
+	]
+	s2: shoot tl2
+
+	expect [s1 = s2]
+]
+
+issue #3349 [
+	"VIEW Camera: Access Violation in Red --cli and error bug in GUI Console"
+	should not crash
+	;; don't know how to test the "error bug in GUI Console" part
+	;; so just testing if the worker crashes
+
+	;; logic: 0 is an invalid index, should return an error
+	output: offload/silent [
+		view [camera select 0]
+	]
+	expect [find output "Error"]
+]
+
+;; #3341 - dismissed
+
+issue/interactive #3336 [
+	"regression: size-text result is incorrect with fixed-size fonts"
+	;; this issue requires both a floating-point pair! type and a `size-text` implementation independent of the face borders
+	;@@ TODO: will this ever be fixed and how?
+
+	;; logic: success criterion is to be able to measure text size from a single cell size
+	display [
+		do [fnt: make font! [name: system/view/fonts/fixed  size: 12]]
+		a: area font fnt
+	]
+	cell:  offload/return [size-text/with a "o"]
+	two:   offload/return [size-text/with a "xx"]
+	four:  offload/return [size-text/with a "WWWW"]
+	lines: offload/return [size-text/with a "x^/x^/x^/x"]
+	expect [cell/x * cell/y > 0]
+	expect [cell * 2x1 = two]
+	expect [cell * 4x1 = four]
+	expect [cell * 1x4 = lines]
+]
+
+issue/layout #3330 [
+	"Rich text does not take new-lines into account"
+	;; turns out not only 'bold', but font size also did not apply
+
+	;; logic: second 'o' becomes tiny when it bugs, so size/y is expected to be ~50px
+	s: shoot [backdrop white rich-text data [font 50 [b "o^/o" /b] ] ]
+	expect [text [35x110 10% in s]]
+]
+
+;; #3311 - hard to reproduce automatically, and unlikely to go unnoticed
+
+issue/interactive #3300 [
+	"Regression in VID styles"
+
+	display [
+		do [list: []]
+		style bbox: base 20x20 draw [pen gray box 0x0 19x19]
+		on-down [append list 'on-down]
+		b1: bbox #000000 b2: bbox #002b36 b3: bbox #073642
+	]
+	click b1 click b2 click b3
+	list: sync list
+	expect [list = [on-down on-down on-down]]	;-- only a single event in the buggy build
+]
+
+issue/interactive #3289 [
+	"Words in actors in user defined styles are bound to face"
+
+	;; logic: face/offset should not change
+	display [
+		do [list: []]
+		style x: base red 100x100 on-down [
+			append list face/offset 
+			offset: 0 
+			append list face/offset
+		]
+		b: x
+	]
+	click b
+	list: sync list
+	expect [2 = length? list]
+	expect [list/1 = list/2]
+]
+
+;; #3288 - covered by #3349 test
+
+issue/interactive #3279 [
+	"'check' value not changed on clicking"
+
+	display [
+		do [list: []]
+		c: check [append list face/data]
+	]
+	click c
+	wait 1		;; no double clicks
+	click c
+	list: sync list
+	expect [2 = length? list]		;-- not 3 events, nor zero
+	expect [list/1 xor list/2]		;-- different states
+]
+
+;; #3278 - dismissed
+;; #3275 - dismissed
+
+;@@ TODO: how #3270 will be fixed? what is the proper behavior?
+
+issue/interactive #3264 [
+	"Radio widget turned off does not generate any event"
+
+	;; logic: click on R2 should trigger on-change of R1 => detect it
+	display [
+		do [list: []]
+		r1: radio "R1" yes [append list 'ok]
+		r2: radio "R2"
+	]
+	click r2
+	list: sync list
+	expect [list = [ok]]
+]
+
+issue/layout #3247 [
+	"VID: unexpected override of system default colors with black on white"
+
+	s1: shoot [field                 area]
+	s2: shoot [field italic          area italic]
+	s3: shoot [field font-color blue area font-color blue]
+	expect [s1 = s2]
+	expect [s1 = s3]
+]
+
+;; #3244 - need a cam to reproduce
+;; #3234 - dismissed 
+
+issue/layout #3225 [
+	"TEXT in DRAW does not honour TRANSLATE command"
+
+	s: shoot/tight [base 200x100 draw [translate 50x30 text 0x0 "Text"]]
+	area: object [offset: 50x30 size: 60x30]
+	expect [text [in s/area aligned left top]]		;-- area will be empty if translation doesn't work
+]
+
+;; #3220 - will be covered by almost any test out there
+
+issue/interactive #3213 [
+	"Image! outside re-opened window"
+
+	;; logic: capture image in a new place, see if it displayed right there
+	offload [
+		lay: layout [canvas: image 100x100 draw [pen cyan fill-pen cyan box 20x20 80x80]]
+		view/no-wait lay
+		unview/only lay
+		top-window: view/no-wait/options lay [offset: 50x50]
+	]
+	canvas: sync canvas
+	s: shoot/real canvas
+	param [amount-of [cyan on s]]  [32% < 34% < 36% > 37% > 39%]
+	param [amount-of [white on s]] [55% < 58% < 64% > 65% > 67%]	;-- 2px of rounding (of box and of capture) total to 4% error
+]
+
+;@@ TODO: too many bugs here, incl. #4337 - finish the test once it's fixed
+; issue/interactive #3207 [
+; 	"request-file bug in MacOS 10.13.2 and 10.13.3 High Sierra"
+; 	;@@ TODO: how portable is this way of issue reproduction?
+; 	;@@ TODO: is should be possible to write a higher level test for this; this code is temporary only
+
+; 	task: jobs/send-main [file: request-file/file %./]
+; 	wait 1		;-- let it display the dialog
+; 	sim-string/async "log.txt"
+; 	sim-key/async enter
+; 	output: jobs/wait-for-task/max task 3
+; 	?? output
+; 	file: sync file
+; 	?? file
+; 	expect [empty? find/last/tail file %log.txt]
+; ]
+
+
+
+issue/interactive #3199 [
+	"The on-unfocus event is not properly triggered on macOs"
+	;; NOTE: this may never be fixed(?), but still should be considered a deficiency
+
+	;; logic: TAB key should traverse the whole layout
+	display [
+		do [
+			transfert-focus: func [evt prev-face next-face][
+				if evt/key = tab [
+					either evt/shift? [set-focus prev-face][set-focus next-face]
+				]
+			]
+			list: []
+		]
+	    tf1: field focus
+	        on-key      [transfert-focus event cb2 tf2]
+	        on-unfocus  [append list "-tf1"]
+	    tf2: field
+	        on-key      [transfert-focus event tf1 cb1]
+	        on-unfocus  [append list "-tf2"]
+	    cb1: drop-list data ["One" "Two"] select 1
+	        on-key      [transfert-focus event tf2 cb2]
+	        on-unfocus  [append list "-cb1"]
+	    cb2: drop-list data ["One" "Two"] select 1
+	        on-key      [transfert-focus event cb1 tf1]
+	        on-unfocus  [append list "-cb2"]
+	]
+	loop 4 [sim-key tab]
+	list: sync list
+	expect [list = ["-tf1" "-tf2" "-cb1" "-cb2"]]
+]
+
+;@@ TODO: will #3193 be granted?
+
+issue/layout #3180 [
+	"Background interferes with `text` in `view`"
+
+	s1: shoot [backdrop white base white    "split-^/text"]
+	s2: shoot [backdrop white box #FFFFFF01 "split-^/text"]
+	expect [visually-similar? s1 s2]
+]
+
+;; #3178 - dismissed
+;@@ TODO: do a manual events test for base & other faces?
+
+;; #3176 - requires a camera to reproduce
+
+issue/interactive #3173 [
+	"View on-over doesn't trigger when using origin 0x0 and --cli"
+
+	move-pointer 0x0
+	top-window: display [
+		do [list: []]
+	    origin 0x0
+	    base 200x200 blue on-over [append list 'ok]
+	]
+	loop 2 [
+		move-pointer top-window ~at~ [center]
+		move-pointer 0x0
+	]
+	list: sync list
+	expect [list = [ok ok ok ok]]		;-- 2 times in and 2 out = 4 events
+]
+
+issue/interactive #3168 [
+	"Tab key is lost when Shift key is pressed on macOS"
+
+	display [
+		do [list: []]
+		field focus
+		on-key [repend list [event/shift? event/key]]
+	]
+	sim-key/mods tab [shift]
+	list: sync list
+	expect [list = reduce [yes #"^-"]]		;-- may also fail due to #4338 and yield [no #"^-"]
+]
+
+issue/interactive #3167 [
+	"submenus not appearing on MacOS"
+	;@@ TODO: coordinates may be unportable - check on other platforms
+	;@@ TODO: test compiled version too?
+
+	;; logic: click on a submenu item - it should work
+	top-window: display/with [
+		size 100x0
+		on-menu [append list event/picked]
+		do [list: []]
+	][	menu: ["item1" ["item2" ["item3" item3]]]
+	]
+	click/async top-window ~at~ [bottom left + 20x-10]		;-- /async, since menu will block it
+	wait 0.2
+	click/async top-window ~at~ [bottom left + 20x10]
+	wait 0.2
+	click top-window ~at~ [bottom left + 100x10]
+	list: sync list
+	expect [list = [item3]]
+]
+
+issue/layout #3165 [
+	"Cannot drag face when display is scaled (Win10)"	;-- and W7
+
+	;; logic: display boxes of different sizes, see if any are not transparent
+	shots: []
+	repeat x 10 [
+		size: 151 + x * 1x1
+		append shots shot: shoot/tight/real (compose/deep [
+			backdrop black
+			box 200x200 loose draw [
+				fill-pen white box 10x10 (size + 10x10)
+			]
+		])
+		expect [box [size at shot 10x10 > 90% all white]]
+	]
+]
+
+issue/interactive #3164 [
+	"VID: view [tab-panel] throws error"
+	should not error out
+
+	display [tab-panel]
+]
+
+;; #3160 - dismissed
+
+issue/interactive #3153 [
+	"`drop-down` data unmodifiable"
+	should not error out
+
+	display [
+		dd: drop-down focus data ["A" "B" "C"]
+		on-enter [append face/data copy face/text]
+	]
+	sim-key #"D" sim-key enter
+	dd: sync dd
+	expect [dd/data = ["A" "B" "C" "D"]]
+]
+
+issue/interactive #3152 [
+	"[Wish] support explicitly setting the radio button data to false"
+	should not error out
+
+	display [radio false]
+]
+
+issue #3131 [
+	"Functions inside face! objects are called during creation"
+
+	list: offload/return [
+		list: []
+		make face! [
+		    type: 'base
+		    size: 100x100
+		    f: does [append list "1"]
+		    e: does [append list "2"]
+		]
+		list
+	]
+	expect [list = []]
+]
+
+issue/interactive #3130 [		;-- can't reproduce "put the PC to sleep part"..
+	"VID: camera - GUI Console freeze when select is omitted in view [camera select 1]"
+	should not crash
+	should not hang
+	should not error out
+
+	display [camera 1]
+]
+
+issue #3129 [
+	"React errors keep being re-thrown"
+
+	output: offload/silent [
+		view [ a: field b: field react [ bb/text: a/text ] ]
+	]
+	expect [find output "Error"]
+	output: offload [
+		unview/only view/no-wait [ a: field b: field react [ b/text: a/text ] ]
+	]
+]
+
+issue #3126 [			;-- similar to #3349, but here with positive index
+	"VID: camera - selecting any index other than 1 crashes GUI Console"
+	should not crash
+
+	output: offload/silent [
+		view [camera select 100]
+	]
+	expect [find output "Error"]
+]
+
+issue #3122 [
+	"Cannot define functions inside face! object"
+
+	output: offload/silent [
+		system/view/debug?: yes
+		test: make face! [
+		    type:  'base
+		    myfunc: does [ 'nothing ]
+		]
+	]
+	offload [system/view/debug?: no]		;-- cleanup
+
+	expect [not find output "Error"]		;-- will be also debug output
+	test: sync test
+	expect ['nothing = test/myfunc]
+]
+
+issue/interactive #3121 [
+	"View 'area' face crash on setting `disable` option"
+	should not crash
+
+	display [a: area disabled  focus 200x300]
+]
+
+issue #3120 [
+	"VID: style error in tab-panel"
+
+	;; logic: view block is invalid, but an error should be informative
+	output: offload/silent [
+		view/no-wait [
+			size 800x600
+			origin 0x0 space 0x0
+			tab-panel 800x600 [
+				style fld: field 600   ;- error
+				"Home " [ 
+					backdrop crimson
+					below
+					space 0x0
+					h4  "Enter  expression:" 
+					fld
+				]
+				"Help " [backdrop crimson ]
+			]
+		]
+	]
+	expect [find output "Error"]
+	expect [find output "invalid syntax"]	;-- not just `copy` error
+]
+
+;@@ TODO: #3116 - test like that is unreliable; should be a custom test that will try various fonts/labels
+
+;@@ TODO: setup & config
