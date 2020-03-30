@@ -10,12 +10,15 @@ recycle/off
 	do #composite %"(startup-dir)jobs.red"
 	do #composite %"(startup-dir)input.red"
 	do #composite %"(startup-dir)visuals.red"
+	do load #composite %"(startup-dir)config.red"
 ][
 	#include %dope.red
 	#include %jobs.red
 	#include %input.red
 	#include %visuals.red
+	do load %config.red
 ]
+
 
 ;; let all I/O be localized in a single isolated directory:
 ;;   working-dir will contain the workers and their I/O

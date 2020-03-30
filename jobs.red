@@ -161,7 +161,8 @@ jobs: make any [value-of jobs  object!] [
 			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view-3369-nodebug.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			;@@ TODO: move this unportable shell trickery outta here
 			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view.exe (to-local-file name) 1>(to-local-file stdout)}
-			pid: call/shell #composite {d:\devel\red\red-src\red\console-view-3369-nodebug.exe (to-local-file name) 1>(to-local-file stdout)}
+			pid: call/shell #composite {(config/command-to-test) (to-local-file name) 1>(to-local-file stdout)}
+			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view-3369-nodebug.exe (to-local-file name) 1>(to-local-file stdout)}
 			assert [pid <> -1]
 			; pid: call #composite {red --cli (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			handle: get-pid-handle pid				;-- pid is not persistent - console may close and it's pid reassigned to another program!
