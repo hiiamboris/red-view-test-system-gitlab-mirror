@@ -80,6 +80,7 @@ context [												;-- hide everything in a context from accidental modificati
 			load-test-run dir
 		]
 	]
+	load-prv-handler: func [fa ev /local dir] [load-test-run last-run-dir]
 	over-tile-handler: func [fa ev /local issue] [
 		either ev/away? [
 			maybe tooltip/text: ""
@@ -117,8 +118,9 @@ context [												;-- hide everything in a context from accidental modificati
 			below
 			panel #405 #fill-x [
 				below
-				load-cmp-btn: button 100 "Load reference" :load-cmp-handler
-				load-run-btn: button 100 "Load results"   :load-run-handler
+				load-cmp-btn: button 100 "Load reference..." :load-cmp-handler
+				load-run-btn: button 100 "Load results..."   :load-run-handler
+				load-prv-btn: button 100 "Load previous"     :load-prv-handler
 				return
 
 				ref-label: text rate 2 on-time [maybe face/data: to-local-file rea/comparison-dir] (wsize/x - 260) font-size 13 #fill-x
@@ -129,6 +131,7 @@ context [												;-- hide everything in a context from accidental modificati
 				test-btn: button 100 "Stop tests" #fix-x :click-test-all-handler
 				react test-btn-reaction 
 				show-every: check true 100 "Show results?" #fix-x
+				rate 0:0:20 on-time [recycle]
 			]
 		]
 		keep [issues-panel: panel #608]
@@ -171,6 +174,7 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 	]
 
+	tile-font: make font! [size: 20]
 	update-tiles: function ["Update each tile's colors & decorations depending on respective issue's state"] [
 		unless jobs/alive? main-worker [exit]		;-- happens when exiting, or during the crash
 
@@ -226,13 +230,14 @@ context [												;-- hide everything in a context from accidental modificati
 				arrows: last base/draw/6				;-- draw arrows on issues with results better or worse than comparison
 				#assert [block? arrows]
 				imp: get-improvement key
-				base/draw/6/2: white - (base/color - 100)						;-- somewhat inverted + brighter
+				c: white - (base/color - 100)						;-- somewhat inverted + brighter
 				case [
-					'? = imp [							;-- suspicious result
-						append clear arrows compose [font (make font! [size: 20]) text 0x0 "?"]
+					'? = imp [										;-- suspicious result
+						append clear arrows compose [pen (c) font tile-font text 0x0 "?"]
 					]
-					imp <> 0 [							;-- definite result
-						if imp < 0 [base/draw/6/2: white - base/color - 100]		;-- somewhat inverted + darker
+					imp <> 0 [										;-- definite result
+						if imp < 0 [c: white - base/color - 100]	;-- somewhat inverted + darker
+						base/draw/6/2: c
 						append clear arrows
 							map-each i gen-range abs imp [
 								compose/only [
@@ -301,6 +306,9 @@ context [												;-- hide everything in a context from accidental modificati
 				if issue/result: result [issue/status: 'tested]
 			]
 		]
+
+		config/last-working-dir: working-dir
+		save-config
 	]
 
 	load-comparison: function [
@@ -374,6 +382,21 @@ context [												;-- hide everything in a context from accidental modificati
 			break
 		]
 	]
+
+	save-config: function [] [
+		cfg-file: #composite %"(startup-dir)config.red"
+		write cfg-file ";; do not modify! (or deal with the possibility of overwrite)^/^/"
+		write/append cfg-file #composite "config: (mold config)"
+	]
+
+	;; will be using previous directory for 1-click crash recovery
+	if not none? dir: select config 'last-working-dir [
+		last-run-dir: dir
+	]
+
+	;; save the log directory in the config - for crash recovery
+	set 'config make config [last-working-dir: working-dir]
+	save-config
 
 	apply view [
 		spec: main-window
