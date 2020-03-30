@@ -4,15 +4,25 @@ Test system for [Red language](https://www.red-lang.org/)'s [View subsystem](htt
 
 ## Features and their status
 
+### UI
+
+It won't do any good to just run tests and log their output somewhere. What's equally important is to be able to effortlessly notice any deviations in the tests.
+
+For this reason, I made a UI called 'Perspective', that is able to compile, run everything and compare sets of results to each other - so we can notice regressions and improvements of each particular build.
+
+It's almost complete. Need to add a side-by-side comparison for nitpicky testing and include manual tests into test routine. Needs score display.
+
+*Goal: provide one-click solutions to most testing tasks; focus on extracting and highlighting the features that we're interested in. It should also be self-explanatory and not require any documentation*
+
 ### Core
 
 Most basic analysis features are implemented, should be enough to cover \~80% of the issues. Improvement and extension may require more sophisticated algorithms: image to image comparison, text vs image comparison, etc. RedCV could be leveraged for that if required. In any case these extensions should come from a practical need, so let's wait for it to arise.
 
-Parallel compilation and testing is achieved, but could be improved by a lot.
+Parallel compilation and testing is finished.
 
 Input emulation can do only mouse & keyboard right now, no touch input (W7 has no touch input support AFAIK).
 
-*Goal: stay simple but try to cover as much aspects of View as possible*
+*Goal: stay adequately simple but try to cover as much aspects of View as possible*
 
 ### Cross-platform support
 
@@ -22,7 +32,7 @@ Only Windows yet. Any volunteers to port it??
 
 ### Issues regression tests
 
-A set of 32 issues implemented as PoC and design basis. Hundreds more to come.
+A set of 115 issues implemented. Hundreds more to come.
 
 *Goal: theoretically, \~95% of the historically raised View issues may be tested using this system*
 
@@ -34,26 +44,34 @@ A few tests in an experimental state so far.
 
 ### Stability & automated testing
 
-Tester thread is very silly right now. It is able to restart workers when those crash though. Some of Red's heisenbugs crash the tester thread sometimes. Log review is shown after each test run and requires an approval (temporary measure until the system is stable).
+- Tester thread is able to restart workers when those crash/freeze.
+- Some of Red's heisenbugs crash the tester thread sometimes, but I got 1-click crash recovery (just click "Load previous" button). You may have to manually kill child `console-..` processes after it crashes.
+- Compilation and testing is fully automated.
 
 *Goal: make the system fault tolerant - being able to recover from crashes, kill runaway & forgotten processes, run failing tests multiple times, and otherwise minimize the requirement for user interaction...*
 
 ### Nitpicky testing
 
-Not implemented yet (requires more stable system), although results logging is more or less there.
+Partly implemented - needs a pragmatic comparison UI.
 
 *Goal: when run twice on the same system - detect the slightest of changes in tests output, warn the user and present an overview for analysis*
 
 ### Setup
 
-Nothing yet. Ask me if you wish to test it. Basically, `jobs.red` contains the path to console used to start a worker, while `testing.red` should be started with the most reliable (and garbage-collected) build.
+I decided not to do any setups. Just clone it and call `run-w32.bat`. It uses a prebuilt by me console exe to run the system.
 
-*Goal: first a config file; later - automated/interactive setup, compilation and self-check*
+You can compile this console yourself:
+- `git clone https://github.com/hiiamboris/red/tree/view-test-system` as it contains all the necessary patches
+- from within that directory (where `red.r` is), `git clone https://gitlab.com/hiiamboris/red-view-test-system`
+- build it: `rebol --do "do/args %red.r {-r -d -o red-view-test-system\view-test-console.exe environment/console/GUI/gui-console.red}"`
+
+Also, to run tests in a custom built console rather than default `red --cli`, you can point `command-to-test` in `config.red` to it (use full path in OS format). 
+
+*Goal: add UI settings to config file, maybe more self-checks on run*
 
 ### Documentation
 
 Requires porting guide, user's guide.
-
 
 ## Philosophy & Architecture
 
