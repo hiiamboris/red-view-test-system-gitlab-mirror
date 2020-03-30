@@ -41,11 +41,11 @@ start-exe: function [exe [file!] /output out [file!]] [
 
 stop-exe: function [
 	"Wait for a process to terminate or force it to; return the time it took to finish"
-	handle [handle! integer!]
+	handle [handle!]
 	/max period [time! float! integer!] "Defaults to 5 seconds"
 ][
-	if integer? handle [handle: make handle! handle]
-	#assert [handle <> make handle! 0]
+	; if integer? handle [handle: load rejoin ["#[handle! " to-hex make handle! handle]
+	#assert [handle <> load "#[handle! 00000000h]"]
 	t1: now/time/precise
 	if all [max period < 0] [period: 0]
 	; either while-waiting any [period 5] [is-job-alive? handle] [] [
