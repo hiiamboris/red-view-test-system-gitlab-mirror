@@ -30,11 +30,12 @@ collect-set-words: function [
 	"Deeply collect set-words from a block of code"
 	code	[block!]
 ][
-	parse code rule: [collect any [
+	rule: [any [
 		ahead [block! | paren!] into rule
 	|	keep set-word!
 	|	skip
 	]]
+	parse code [collect rule]
 ]
 
 
@@ -78,4 +79,15 @@ do-using: function [
 ][
 	fun: function [] compose [(definitions) do bind code :fun]		;@@ BUG: unfortunately, this binds 'local as well and traps return/exit
 	fun
+]
+
+text: [
+    {[View] RADIO emits superfluous events on Windows and macOS} 
+    list: [] 
+    push list 
+    display [r: radio [append list face/data]] click pos: r ~at~ [middle left + 10] 
+    list: sync list 
+    expect [list = reduce [true]] click pos 
+    list: sync list 
+    expect [list = reduce [true]]
 ]

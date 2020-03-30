@@ -6,7 +6,7 @@ Red [
 
 #system [
 
-	#include %/d/devel/red/red-view-test/sys-image-lock.reds
+	#include %../../../red-view-test-system/sys-image-lock.reds		;-- path relative to console.red
 	
 	rs-get-colorset: func [
 		im			[red-image!]

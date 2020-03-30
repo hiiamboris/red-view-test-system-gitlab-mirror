@@ -115,11 +115,6 @@ jobs: make any [value-of jobs  object!] [
 		]
 		#assert [none? worker/pid]
 		start-worker/replace worker
-		; pos: remove find/same workers worker	;-- free a slot for a new worker
-		; set worker new-one: start-worker
-
-		; insert pos worker						;-- replace it in the list, preserving index
-		; remove find/same workers new-one
 	]
 
 	stack-friendly
@@ -128,13 +123,14 @@ jobs: make any [value-of jobs  object!] [
 			not replace
 			max-workers-count <= length? workers
 		] [ERROR "Out of allowed worker slots"]
+
 		wi: last-worker-index + 1
 		worker: make worker! [
-			stdin:  #composite %"stdin-(wi).txt"
-			stdout: #composite %"stdout-(wi).txt"
-			stderr: #composite %"stderr-(wi).txt"
-			name:   #composite %"worker-(wi).red"
-			foreach stream [stdin stdout stderr] [
+			stdin:  #composite %"(working-dir)stdin-(wi).txt"		;-- use absolute paths to be able to change directories
+			stdout: #composite %"(working-dir)stdout-(wi).txt"
+			; stderr: #composite %"(working-dir)stderr-(wi).txt"
+			name:   #composite %"(working-dir)worker-(wi).red"
+			foreach stream [stdin stdout] [  ; stderr] [
 				write get stream ""				;-- empty streams in case they were not
 			]
 			;; `input` doesn't work - see #4241
@@ -147,7 +143,7 @@ jobs: make any [value-of jobs  object!] [
 					forever [
 						wait 1e-2					;-- lessen CPU load
 						loop 5 [do-events/no-wait]	;-- process queued events
-						bin: read/binary/seek %stdin-(wi).txt ofs
+						bin: read/binary/seek (mold stdin) ofs
 						if pos: find/tail bin %"^^/" [
 							ofs: ofs + offset? bin pos
 							str: to string! copy/part bin pos
@@ -159,13 +155,12 @@ jobs: make any [value-of jobs  object!] [
 					]
 				]
 			}
-			;@@ TODO: hide worker's words from the user code
 			;@@ /input/output/error isn't working - see #4241
-			;@@ it's best to call 3369 build, since other builds have mold heisenbug (#4291)
 			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view-3369-nodebug.exe (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
 			;@@ TODO: move this unportable shell trickery outta here
+			; pid: call/shell #composite {d:\devel\red\red-src\red\console-view.exe (to-local-file name) 1>(to-local-file stdout)}
 			pid: call/shell #composite {d:\devel\red\red-src\red\console-view-3369-nodebug.exe (to-local-file name) 1>(to-local-file stdout)}
 			assert [pid <> -1]
 			; pid: call #composite {red --cli (to-local-file name) 1>(to-local-file stdout) 2>(to-local-file stderr)}
@@ -182,20 +177,13 @@ jobs: make any [value-of jobs  object!] [
 	]
 
 	stack-friendly
-	kill-worker: function [worker [object!]] [  ; when it hung (otherwise `quit` should be commanded)
+	kill-worker: function [worker [object!]] [  ;-- when it hung (otherwise `quit` should be commanded)
 		assert [worker/pid]
-		; switch/default system/platform [
-		; 	Windows [ok: 0 = call/shell/wait #composite "taskkill /f /t /pid (worker/pid)"]		;-- destroys the whole process tree - both cmd and console
-		; ][do make error! rejoin ["kill-worker: unsupported platform " platform]]
-		; if ok [
-		; 	worker/pid: none
-		; 	;@@ remove it from the `workers` list?
-		; ]
 		if alive? worker [
 			; kill-job worker/handle
 			; kill-process worker/handle
 			kill-process-tree worker/handle
-			worker/pid: none
+			worker/pid: worker/handle: none
 		]
 	]
 
@@ -203,7 +191,7 @@ jobs: make any [value-of jobs  object!] [
 	stop-worker: function [worker [object!]] [  ; when it hung (otherwise `quit` should be commanded)
 		assert [worker/pid]
 		unless alive? worker [				;-- terminated already?
-			worker/pid: none
+			worker/pid: worker/handle: none
 			return yes
 		]
 
@@ -212,7 +200,7 @@ jobs: make any [value-of jobs  object!] [
 		loop 50 [			;-- wait half a sec max (else kill)
 			wait 1e-2
 			if find peek-worker-output worker "quit" [
-				worker/pid: none
+				worker/pid: worker/handle: none
 				return yes
 			]
 		]
@@ -232,7 +220,7 @@ jobs: make any [value-of jobs  object!] [
 
 	stack-friendly
 	alive?: function [worker [object!]] [
-		is-process-alive? worker/handle
+		all [worker/handle  is-process-alive? worker/handle]
 		; is-job-alive? worker/handle
 	]
 
@@ -263,16 +251,6 @@ jobs: make any [value-of jobs  object!] [
 		task
 		;@@ TODO: wait until worker signals it's running this task?
 	]
-
-	; send: function [	 ; to a free worker - or create new
-	; 	"Send command to the first free worker (waits if they're busy); returns yes on success or no on timeout"
-	; 	command [block!]
-	; 	/force "Create a new worker if all are busy"
-	; ][
-	; 	;; this must not wait indefinitely but check workers' timeouts
-	; 	;; since worker is free, we can check acknowledgement
-	; 	;; must also set `task` and `last-code`
-	; ]
 
 	stack-friendly
 	send-main: function [
@@ -314,8 +292,8 @@ jobs: make any [value-of jobs  object!] [
 			while-waiting
 				period
 				[worker/last-completed-task-id < task/id]		;-- = if this is the task; > if completed previously
-				[output: read-task-report worker]
-			[output][none]								;@@ none or error?
+				[read-task-report worker]
+			[task/output][none]								;@@ none or error?
 	]
 
 	; wait-for-worker: function [worker [object!] /max period [float! integer! time!]] [
@@ -347,7 +325,6 @@ jobs: make any [value-of jobs  object!] [
 		s
 	]
 
-	stack-friendly
 	peek-worker-output: function [worker [object!]] [		; does not consume but returns unprocessed part of worker's output file
 		remove-GC-output to string! read/binary/seek worker/stdout worker/stdout-offset
 	]
@@ -356,6 +333,13 @@ jobs: make any [value-of jobs  object!] [
 	; 	also to string! bin: read/binary/seek worker/stdout ofs: worker/stdout-offset
 	; 		worker/stdout-offset: ofs + length? bin
 	; ]
+
+	read-heavy-reports: function ["Update all compilation tasks state"] [
+		foreach worker next workers [		;-- skip the main-worker
+			rep: read-task-report worker
+			while [rep <> new: read-task-report worker] [rep: new]	;-- stop reading when it returns either the same (busy) task or none
+		]
+	]
 
 	;; returns none if performing no task
 	;; returns id (integer) if next task is not complete
@@ -399,7 +383,7 @@ jobs: make any [value-of jobs  object!] [
 	; reset-system-words
 	init: does [
 		main-worker: start-worker
-		q: does [
+		quit-gracefully: q: does [
 			stop-all-workers
 			kill-all-workers		;-- force-kill those that do not yield
 			change-dir startup-dir

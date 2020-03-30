@@ -18,6 +18,8 @@ recycle/off
 ]
 
 ;; let all I/O be localized in a single isolated directory:
+;;   working-dir will contain the workers and their I/O
+;;   current dir (same by default) will contain tests output, scripts, compiled exes and artifacts
 once startup-dir: what-dir
 once working-dir: clean-path rejoin [%logs/run- timestamp %/]
 unless what-dir = working-dir [
@@ -25,6 +27,7 @@ unless what-dir = working-dir [
 	change-dir working-dir
 ]
 
+assert [what-dir = working-dir]
 
 #where's-my-error?
 
@@ -34,17 +37,33 @@ reload: does [do/expand load #composite %"(startup-dir)testing.red" ()]		;-- loa
 
 unless value? 'main-worker [jobs/init]
 
+score: 0
+
 toolset: context [
 
+	{
+		issue status can be:
+			not-compiled - for those requiring compilation
+			compiling - after compilation started
+			ready - compiled or does not require compilation
+			tested - ran at least once; test results are available
+
+		issue result can be:
+			none - not tested yet
+			ok - all tests pass
+			warning - at least one parameter at a warning level, and no errors/critical levels
+			error - at least one `expect` failed or at least one parameter reached critical level
+			crash - crash detected during testing (overrides any errors)
+			freeze - hung during testing (overrides any errors and crashes)
+	}
 	set 'issue function [
 		"Declare an issue test code with specific test capabilities"
 		title [string! issue!]
 		test-code [block!]
-		/interactive "Exposes DISPLAY, CLICK, DRAG, SHOOT"
+		/interactive "Exposes DISPLAY, CLICK, DRAG, SHOOT (and more)"
 		/layout "Exposes SHOOT"
 		/compile /compiled "Exposes COMPILE"
-		/deadlock "IDK yet @@ TODO"
-		;@@ TODO: refinements
+		/local condition
 	][
 		;@@ map has got no support for #issue keys yet - gotta convert to string
 		if issue? title [title: mold title]
@@ -52,7 +71,7 @@ toolset: context [
 			keep [offload sync pull push should settle-down expect-box crashed?]	;-- common words
 			case/all [
 				interactive
-					[keep [display click drag roll-the-wheel move-pointer shoot close-windows close]]
+					[keep [display click drag roll-the-wheel move-pointer sim-key sim-string shoot close-windows close]]
 				layout
 					[keep [shoot close-windows]]
 				any [compile compiled]
@@ -61,18 +80,41 @@ toolset: context [
 		]
 		code: copy/deep test-code				;-- will be modified
 		;; for now, just remove `should not.. patterns` @@ TODO: use them
-		parse/case code [any [to remove ['should 'not ['crash | 'hang | 'error 'out]]] to end]
+		;; test code may formally not contain any tests but `should not` directive which is the test condition!
+		special: copy []
+		parse/case code [
+			any [
+				to remove ['should 'not set condition ['crash | 'hang | 'error 'out]]
+				(append special condition)
+			]
+			to end
+		]
 
 		bind-only code words
-		flags: object compose [interactive: (interactive) layout: (layout) compiled: (any [compile compiled])]
+		flags: object compose [
+			interactive: (interactive)
+			layout: (layout)
+			compiled: (any [compile compiled])
+			should-not: special
+		]
 		vars: expand-variants code
 		foreach [vnum vcode] vars [
 			key: either 2 = length? vars [title][#composite "(title)-(vnum)"]
 			if issues/:key [		;-- redefinition attempt
 				warn #composite "Redefinition of issue (key) detected"
 			]
-			make-context-for vcode			;-- binds in place
-			issues/:key: reduce [vcode flags]
+			ctx: make-context-for vcode			;-- binds in place
+			issues/:key: object compose/only [
+				code:   (vcode)
+				flags:  (flags)
+				ctx:    (ctx)
+				key:    (key)
+				title:	either string? :vcode/1 [:vcode/1][none]
+				status: either flags/compiled ['not-compiled]['ready]
+				result: none
+				log:    none
+				artifacts: copy []
+			]
 		]
 	]
 
@@ -200,16 +242,15 @@ toolset: context [
 		/tight
 		/local ret
 	][
-		=coll=: [any [keep set-word! | ahead [block! | paren!] into =coll= | skip]]
-		set-words: append parse layout [collect =coll=] [top-window:]	;-- need `top-window:` to sync it properly
-		view-path: copy 'view/no-wait
-		cmd: [top-window: (view-path) (layout)]
-		case/all [
-			tight [append view-path 'tight]
-			with  [append view-path 'options  append/only cmd opts]
-			flgs  [append view-path 'flags    repend cmd ['quote flgs]]
+		set-words: append collect-set-words layout [top-window:]	;-- need `top-window:` to sync it properly
+		view-path: apply/only view construct/only compose/only [
+			no-wait: yes
+			spec:    (layout)
+			tight:   (tight)
+			options: (with)  opts: (opts)
+			flags:   (flags) flgs: (flgs)
 		]
-		offload compose/only cmd						;-- the main window
+		offload compose [top-window: (view-path)]		;-- the main window
 		foreach sw set-words [set/any sw pull (sw)]		;@@ TODO: process ALL queued events before pulling?
 		foreach sw set-words [							;-- also update window objects for use in capture-face
 			all [
@@ -221,6 +262,7 @@ toolset: context [
 			]
 		]
 		;@@ TODO: should `display` call `settle-down`?
+		#assert [quacks-like-face? top-window]
 		top-window
 	]
 
@@ -230,6 +272,7 @@ toolset: context [
 		"Capture the LAYOUT in a main-worker thread using to-image; return the image"
 		'layout [block! word!] "Layout block or name of a face known to the worker"
 		/real "Capture real appearance (may be overlapped!)"
+		/whole "Include non-client area if layout is a window"
 		/tight
 		/local top-window
 	][
@@ -244,14 +287,19 @@ toolset: context [
 		
 		; img: offload/return compose [to-image (layout)]
 		unless real [
-			img: offload/return compose [to-image top-window]		;-- to-image doesn't work on bare faces, so shoot the whole window
+			unless object? face: get/any layout [face: pull (layout)]		;-- word hasn't been synced, but we need to know it's face type
+			img: offload/return compose [
+				to-image (either 'window = face/type [layout]['top-window])		;-- to-image doesn't work on bare faces, so shoot the whole window
+			]
 		]
 		layout: pull (layout)		;-- sync it, as we require it right now and it can be unset or filled with other data locally
 		#assert [object? :layout]
 		#assert [quacks-like-face? :layout]
-		img: either real [
-			capture-face/real layout
-		][	capture-face/with layout img
+		img: apply capture-face compose [
+			face:  layout
+			real:  (real)
+			with:  (not real) img: (img)
+			whole: (whole)
 		]
 
 		if close? [offload [unview]]
@@ -344,6 +392,7 @@ toolset: context [
 		/at point	[pair! block!] "Offset in the face or coordinate descriptor block"
 		; /no-wait	"Do not wait for the worker to process the event"
 		/right		"Simulate RMB instead"
+		/double		"Double the specified event"
 		/async		"Do not wait for the worker to process the click event"		;-- this is useful when popping up any menu - the event loop stops
 		/local mod
 	][
@@ -358,8 +407,34 @@ toolset: context [
 				target: target/size / 2 + target/offset + any [attempt [target/base] 0x0]
 			]
 		]
-		simulate-input-raw compose pick [ [(target) + rmb - rmb][(target) + lmb - lmb] ] right
+		move:  reduce [target]
+		click: pick [[+ rmb - rmb][+ lmb - lmb]] right
+		simulate-input-raw compose [(move) (click)]
+		if double [wait 0.05 simulate-input-raw click]
 		if mods [simulate-input-raw reverse map-each/eval mod mlist [[mod '-]]]
+		unless async [offload body-of :do-queued-events]	;-- let worker process the input (else sync may return old values in `sync`)
+	]
+
+	sim-key: function [
+		'key [word! char!]
+		/mods mlist	[block!] "List of modifier keys"
+		/async		"Do not wait for the worker to process the click event"		;-- this is useful when popping up any menu - the event loop stops
+		/local mod
+		;@@ TODO: add a target to focus before keypresses?
+	][
+		if mods [simulate-input-raw map-each/eval mod mlist [['+ mod]]]
+		simulate-input-raw reduce ['+ key '- key]
+		if mods [simulate-input-raw reverse map-each/eval mod mlist [[mod '-]]]
+		unless async [offload body-of :do-queued-events]	;-- let worker process the input (else sync may return old values in `sync`)
+	]
+
+	sim-string: function [
+		str [string!]
+		/async		"Do not wait for the worker to process the click event"		;-- this is useful when popping up any menu - the event loop stops
+		/local c
+		;@@ TODO: add a target to focus before keypresses?
+	][
+		simulate-input-raw map-each/eval c str [['+ c '- c]]
 		unless async [offload body-of :do-queued-events]	;-- let worker process the input (else sync may return old values in `sync`)
 	]
 
@@ -386,75 +461,83 @@ toolset: context [
 	;@@ TODO: make issue set-words local; and also synced words local
 	;@@ TODO: inspect any values inside an issue post-failure
 	;@@ TODO: a list of successful and failed issues (latter may be re-tested, or the test process interrupted and continued...)
-	set 'test-issue function [
+	set 'ti set 'test-issue function [
 		"Run the tests for a given issue"
 		title [string! issue! number!]
 		/variant vnum [integer!]
+		/no-review
 		/local code flags
+		/extern score
 	][
+		mark: log-mark
+
 		key: form-issue-key/variant title vnum
-		unless definition: issues/:key [
+		unless def: issues/:key [
 			ERROR "Unable to find definition for issue (key)"
 		]
-		set [code flags] definition
+		#assert [find [ready tested] def/status]
+		#assert [not all [def/flags/compiled find [not-compiled compiling] def/status] "Issue has not been compiled!"]
+
+		code: def/code
 		;; log the issue context
-		if pos: find head code set-word! [
-			log-artifact object compose [
-				type: 'context
-				ctx: context? pos/1
-				key: (key)
-			]
+		;; @@ TODO: maybe log the whole issue object? ;)
+		unless empty? words-of def/ctx [
+			log-artifact object compose [type: 'context  ctx: (def/ctx)  key: (key)]
 		]
 
-		if flags/interactive [bgnd: display-background do-queued-events]
+		if def/flags/interactive [bgnd: display-background do-queued-events]
 		sw-len: offload/return [length? words-of system/words]
-		if 'ok <> catch/name [						;-- wrapper for compiled issues
-			inspect: func [result [any-type!] next-code] [code: next-code]
-			trace :inspect [eval-results-group/key code key]
-			'ok
-		] 'stop [							;-- compile request detected: wait for it to finish and continue
-			task: compile-tasks/:key
-			assert [task]
-			log-trace #composite "Waiting for issue (key) being compiled"
-			while-waiting 0:5:0 [not task/finished?] [
-				jobs/read-task-report task/worker			;-- update task state
-				wait 1 prin "." do-queued-events
-			]
-			remove/key compile-tasks key
-			eval-results-group/key code key
-		]
-		log-review
+		eval-results-group/key code key
+
 		close-windows
 		if bgnd [unview/only bgnd]		;@@ TODO: display it once only?
 		finish-exes key
 		offload compose [					;-- unset all used words (cleanup)
 			unset skip words-of system/words (sw-len)
 		]
-		recycle											;-- forget any screenshots
+		recycle											;-- forget screenshots
+		;@@ TODO: maybe call `clear-reactions` too?
+
+		;; update the result
+		def/status: 'tested
+		msgs: rejoin ["" keep-type log-since mark string!]
+		foreach [marker word should-cond] [
+			"WARNING:" warning #[none]			;-- order here: from the small evil to greater
+			"ERROR:"   error   error
+			"CRASHED!" crash   crash
+			"BUSY!"    freeze  hang
+		][
+			if find/case msgs marker [
+				result: word
+				continue						;-- score shouldn't be incremented
+			]
+			if find def/flags/should-not should-cond [	;-- condition affects the score
+				score: score + 1		;@@ TODO: or get rid of `should not *` completely?
+			]
+		]
+		default result: ['ok]
+		def/result: result
+		log-artifact object compose [
+			type:   'result
+			result: quote (result)
+			key:    (key)
+		]
+		save-artifacts key		;-- save for later comparison
+
+		unless no-review [log-review/key key]
 	]
 
 	comment {
-		problem with `compile` is that it can't pre-compile stuff before running the issue code: that code may form the string to compile
-		but it also can't wait until compilation is finished - that's too slow
-		I also can't let the workers perform the issues code as that will complicate them too much and affect their behavior
-		(at the very least workers should be run on unmodified console)
-		so the least evil seems to be to let it recurse:
-		`compile` sends the compilation task to the worker and forks into testing another issue
-		after this issue's successful/erroneous evaluation, it tests again and either forks again or proceeds with issue's code
-		.. but for that I need to first finish the linear testing pipeline ..
-
 		compile logic:
 		1) check if compiled exe already exists, return it then
 		2) if not, make a job for the worker and throw a STOP
 		who will wait for the job?
 
 		limitations of compile:
-		- it should not execute any worker code before a call to `compile`
 		- after variant expansion, `compile` should be a top-level instruction
+		- tests code should not rely on worker preserving any words set before a call to `compile`
 		- only a single compile per variant is allowed for now (@@ TODO: relax this)
-			problem is to wait for the 1st compilation before proceeding into the next
-			plus 2nd invocation of compile has to check the exe existence - for that the exe must have a unique predictable name (one per variant)
-		- before `compile`, `expect`/`param` are undefined (can be relaxed easily)
+			(multiple compiles were never needed so far and they complicate the test system logic)
 	}
 
 	once compile-tasks: #()
@@ -462,25 +545,19 @@ toolset: context [
 	set 'start-compile function [
 		title	[issue! integer! string!]
 		/variant var [integer!]
-		/local code flags
 	][
 		key: form-issue-key/variant title var
-		compile-ahead?: does [
-			parse code [
-				to ['compile | into ['compile to end]] to end
-			]
-		]
 		unless def: issues/:key [ERROR "Unable to find definition for issue (key)"]
-		set [code flags] def
-		unless flags/compiled [ERROR "Not a compiled issue - (key)"]
+		unless def/flags/compiled [ERROR "Not a compiled issue - (key)"]
 		;; verify that this variant (it's non-evaluated yet part) has a compile instruction
-		unless compile-ahead? [ERROR "Nothing to compile in issue (key)"]
-		code: eval-part/key code key
-;@@ TODO: need to wrap it with eval-group.. thing somehow!
-		change/only def code			;-- update the variant code to start off the new point next time
+		unless compile-ahead? def/code [ERROR "Nothing to compile in issue (key)"]
+		code: eval-part/key def/code key
+		def/status: 'compiling
+		#assert [same? head code head def/code]
+		def/code: code					;-- update the variant code to start off the new point next time
 		; assert [not empty? code]			;-- compile should not be the only instruction
 		; assert [not compile-ahead? code]	;@@ see the note above
-		compile-tasks/:key
+		compile-tasks/:key			;-- return the task
 	]
 
 	set 'run-all-interpreted function [
@@ -488,29 +565,45 @@ toolset: context [
 		/local code flags
 	][
 		foreach [key def] issues [
-			set [code flags] def
-			unless flags/compiled [test-issue key]
+			unless def/flags/compiled [test-issue key]
 		]
 	]
 
+	;; returns a block of refinements (could be empty) or none
+	compile-ahead?: function [code [block!]] [
+		flags: []
+		all [
+			parse code [
+				to ['compile | ahead path! into ['compile copy flags some word! to end]] to end
+			]
+			as block! flags
+		]
+	]
+
+	;; this one has to be smart:
+	;; 1) schedule a devmode script first - this creates libredrt
+	;; 2) schedule all release-mode scripts - to give the 1st compilation time to finish
+	;; 3) schedule all the rest - with libredrt present devmode compilations should be fast
 	set 'start-compile-all function [
 		"Initiate compilation of all compiled issues"
 		/local code flags
 	][
-		compile-ahead?: does [
-			parse code [
-				to ['compile | into ['compile to end]] to end
-			]
-		]
+		list: copy []
 		foreach [key def] issues [
-			set [code flags] def
 			if any [
-				not flags/compiled				;-- not a /compiled issue
-				not compile-ahead?				;-- no `compile` in non-evaluated part of it?
-				is-compiled? key				;-- already done?
+				not def/flags/compiled				;-- not a /compiled issue
+				not flags: compile-ahead? def/code	;-- no `compile` in non-evaluated part of it?
+				is-compiled? key					;-- already done?
 			] [continue]
-			code: eval-part/key code key
-			change/only def code				;-- update the variant code to start off the new point next time
+			repend list [def find flags 'release]
+		]
+		sort/skip/compare/reverse list 2 2			;-- puts /release compiles ahead
+		if false = last list [						;-- at least one /devmode present?
+			insert list take/part skip tail list -2 2	;-- move it to the head of the list
+		]
+		foreach [def rel?] list [
+			def/code: eval-part/key def/code def/key	;-- compile & update the variant code to start off the new point next time
+			def/status: 'compiling
 			; assert [not empty? code]			;-- compile should not be the only instruction
 			; assert [not compile-ahead? code]	;@@ see the note above
 		]
@@ -523,7 +616,10 @@ toolset: context [
 	][
 		task: compile-tasks/:key
 		; assert [not none? task]
-		all [task task/finished?]
+		any [
+			all [task task/finished?]
+			exists? #composite %"(key)-code.exe"	;-- allow user to provide the exe ;@@ TODO: make it portable
+		]
 	]
 
 	set 'do-compiled-tests function ["Test all compiled issues that were interrupted by compilation"] [
@@ -638,7 +734,7 @@ toolset: context [
 		title: switch type?/word title [
 			issue!   [mold title]
 			integer! [rejoin ["#" title]]
-			string!  [title]
+			string!  [return title]		;-- should have a variant appended already
 		]
 		if vnum [title: #composite "(title)-(vnum)"]
 		title
@@ -666,6 +762,9 @@ toolset: context [
 ; halt
 
 load-issues
+
+import toolset		;-- for use in the console  ;@@ TODO: remove this
+
 ; issue/interactive "test" [
 ; 	"abcdef"
 ; 	variant 1 [x: 100]

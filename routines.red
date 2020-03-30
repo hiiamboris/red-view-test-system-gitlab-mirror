@@ -4,14 +4,14 @@ Red [
 	license: 'BSD-3
 ]
 
-#system [#include %/d/devel/red/red-view-test/sys-input-win32.reds]
-#include %/d/devel/red/red-view-test/sys-ui.red
-#include %/d/devel/red/red-view-test/sys-ui-win32.red
-#include %/d/devel/red/red-view-test/sys-proc-win32.red
-#include %/d/devel/red/red-view-test/sys-grab-win32.red
-#include %/d/devel/red/red-view-test/sys-input.red
-#include %/d/devel/red/red-view-test/sys-colorset.red
-#include %/d/devel/red/red-view-test/sys-egd.red
-#include %/d/devel/red/red-view-test/sys-boxes.red
+#system [#include %../../../red-view-test-system/sys-input-win32.reds]		;@@ this is mental! paths are relative to console.red
+#include %red-view-test-system/sys-ui.red
+#include %red-view-test-system/sys-ui-win32.red
+#include %red-view-test-system/sys-proc-win32.red
+#include %red-view-test-system/sys-grab-win32.red
+#include %red-view-test-system/sys-input.red
+#include %red-view-test-system/sys-colorset.red
+#include %red-view-test-system/sys-egd.red
+#include %red-view-test-system/sys-boxes.red
 
 

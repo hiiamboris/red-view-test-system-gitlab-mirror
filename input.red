@@ -52,14 +52,21 @@ simulator: context [
 		object [vkey: vk and FFh  mods: copy modz]
 	]
 
+	digit: charset [#"0" - #"9"]
 	word-to-vk: func [w [word!]] [
 		w: switch/default w [
 			shift			['VK_LSHIFT]
 			ctrl control	['VK_LCONTROL]
 			alt menu		['VK_LMENU]
 			enter return	['VK_RETURN]
+			tab				['VK_TAB]
 			;@@ need more?
-		][w]
+		][
+			either parse form w ["F" 1 2 digit] [		;-- F1-F24 keys bulk support
+				to word! rejoin ['VK_ w]
+			][	w
+			]
+		]
 		assert [find/match form w "VK_"  'w]
 		get w
 	]

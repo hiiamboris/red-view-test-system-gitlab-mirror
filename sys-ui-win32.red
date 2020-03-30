@@ -28,23 +28,62 @@ Red [
 				lpRect		[RECT_STRUCT]
 				return:		[integer!]
 			]
+			ShowWindow: "ShowWindow" [
+				hWnd		[handle!]
+				nCmdShow	[integer!]
+				return:		[logic!]
+			]
 		]
 	]
 ]
 
 activate*: routine [
-	hwnd [any-type!] "handle! or integer!"	;-- both have /value as 3rd integer (integer is a hack due to handle being unloadable)
+	hwnd [any-type!] "handle! or integer!"
 	/local h
 ][
+	assert any [
+		TYPE_HANDLE  = TYPE_OF(hwnd)
+		TYPE_INTEGER = TYPE_OF(hwnd)
+	]
 	h: as red-handle! hwnd
-	SetForegroundWindow GetAncestor as handle! h/value 2	;-- GA_ROOT
+	SetForegroundWindow GetAncestor as handle! h/value 2	;-- 2 = GA_ROOT
+]
+
+minimize*: routine [
+	hwnd [any-type!] "handle! or integer!"
+	/local rh h
+][
+	assert any [
+		TYPE_HANDLE  = TYPE_OF(hwnd)
+		TYPE_INTEGER = TYPE_OF(hwnd)
+	]
+	rh: as red-handle! hwnd
+	h: GetAncestor as handle! rh/value 2	;-- 2 = GA_ROOT
+	ShowWindow h 6							;-- 6 = SW_MINIMIZE
+]
+
+restore*: routine [
+	hwnd [any-type!] "handle! or integer!"
+	/local rh h
+][
+	assert any [
+		TYPE_HANDLE  = TYPE_OF(hwnd)
+		TYPE_INTEGER = TYPE_OF(hwnd)
+	]
+	rh: as red-handle! hwnd
+	h: GetAncestor as handle! rh/value 2	;-- 2 = GA_ROOT
+	ShowWindow h 9							;-- 9 = SW_RESTORE
 ]
 
 get-window-size*: routine [
-	hwnd [any-type!] "handle! or integer!"	;-- both have /value as 3rd integer (integer is a hack due to handle being unloadable)
+	hwnd [any-type!] "handle! or integer!"
 	return: [pair!]
 	/local h rc [RECT_STRUCT value]
 ][
+	assert any [
+		TYPE_HANDLE  = TYPE_OF(hwnd)
+		TYPE_INTEGER = TYPE_OF(hwnd)
+	]
 	h: as red-handle! hwnd
 	GetWindowRect as handle! h/value rc
 	as red-pair! stack/set-last as cell! pair/push rc/right - rc/left rc/bottom - rc/top

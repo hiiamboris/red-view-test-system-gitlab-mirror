@@ -4,7 +4,26 @@ Red [
 	license: 'BSD-3
 ]
 
+#include %assert.red
 #include %bindings.red		;-- bind-only for for-each
+#include %composite.red
+
+
+count: function [
+	"Count occurrences of X in S (using `=`)"
+	s [series!]
+	x [any-type!]
+	;@@ TODO /case /same
+][
+	r: 0
+	while [s: find/tail s :x] [r: r + 1]
+	r
+]
+
+gen-range: function [max [integer!]] [
+	collect [repeat i max [keep i]]
+]
+
 
 xyloop: function [
 	"Iterate over 2D series or pair"
@@ -114,11 +133,11 @@ for-each: function [
 	; 	not find spec block!
 	; 	;-- should also check if advance isn't used
 	; ] [return foreach (spec) series code]				;-- use default loop when possible
-	spec: compose [(spec)]
-
-	step: (count spec word!) + (count spec get-word!)
-	if 0 = step [do make error! rejoin ["Spec must contain words or get-words!"]]
+	spec: to block! spec
 	set-index: either set-word? :spec/1 [to block! to set-word! take spec][[]]
+	
+	step: (count spec word!) + (count spec get-word!)
+	if 0 = step [ERROR "Spec must contain words or get-words!"]
 	types:  make block! step
 	values: make block! step
 	_: none												;-- will be used for valus slots
@@ -130,9 +149,10 @@ for-each: function [
 		] (append values none)
 	|	change set x get-word! '_ (append values x append types any-type!  use-values?: yes)
 	|	end
-	|	spc: (do make error! rejoin ["Unexpected spec format: " mold spc])
+	|	spc: (ERROR "Unexpected spec format (mold spc)")
 	]]
-	;@@ TODO: ideally, just make a function with spec from `types` and attempt-call it to check types; but need to prevent it from evaluating `series`
+
+	;;@@ TODO: fastest(?) way to check values' types - call a function - do that once `apply` is a native - otherwise will have to compose the call each time
 	if use-types? [
 		types-match?: func [series types /local i] [
 			repeat i length? types [
@@ -177,24 +197,30 @@ for-each: function [
 			stop: 1 + length? series		;@@ this fixes length; if it's building up - won't be accounted for ;@@ TODO: allow growing up
 		]
 	]
+
 	; advance: does compose [series: skip (to set-word! pos) series (step)]
 	advance: does compose [
 		also at series index			;-- return series for `set` usage ;@@ TODO: buggy(?) with /reverse - at head always succeeds
 			index: (step) + index		;-- do not use `get` on user provided index word, for security; do not set it for predictability
 	]
 	bind-only code 'advance
+
+	cmp:          pick [> <] reverse
+	type-check:   pick [ [types-match?  where types ] [] ] use-types?
+	values-check: pick [ [values-match? where values] [] ] use-values?
+	spec-fill:    compose/only pick [ [set (spec) where] [foreach (spec) where [break]] ] any-block? series
+	filtered?:    use-types? or use-values?
+	eval:         [set/any 'r do code]
 	do compose/deep [
-		while [index (pick [> <] reverse) stop] [
+		while [index (cmp) stop] [
 			;; this should go before the code - to advance on `continue`!
 			where: at series index
-			; set spec at series index
-			index: (step) + (set-index) index		;-- inline it for more juice
-			all [
-				(either use-types?  [ compose [types-match?  where types ] ] [()])
-				(either use-values? [ compose [values-match? where values] ] [()])
-				set spec where
-				set/any 'r do code
-			]
+			index: (step) + (set-index) index		;-- inlines `advance` for more juice
+
+			(compose/deep pick [
+				[ if all [(type-check) (values-check)] [(spec-fill) (eval)] ]
+				[ (spec-fill) (eval) ]
+			] filtered?)
 		]
 	]
 	:r
@@ -203,17 +229,7 @@ for-each: function [
 ; v: 2.0
 ; for-each [x: y [integer!] :v] [1 2.0 3] [probe x/2]
 
-
-count: function [
-	"Count occurrences of X in S (using `=`)"
-	s [series!]
-	x [any-type!]
-	;@@ TODO /case /same
-][
-	r: 0
-	while [s: find/tail s :x] [r: r + 1]
-	r
-]
+#assert [[#"a" #"b" #"c"] = collect [for-each c "abc" [keep c]]]
 
 
 naive-map-each: func ['spec [word! block!] series [series!] code [block!] /only /eval /self /local tgt] [
@@ -233,13 +249,20 @@ map-each: func ['spec [word! block!] series [series!] code [block!] /only /eval 
 	]
 	#assert [function? :count]							;-- leaked words may override it :(
 	for-each (spec) old: series compose [
-		append/part tgt old at series (to word! spec/1)
+		new: at series (to word! spec/1)
+		; unless old =? new [append/part tgt old new]		doesn't work because of #4336
+		unless old =? new [append tgt copy/part old new]	;-- workaround
 		(pick [append/only append] only) tgt (either eval ['reduce][()]) do code
-		old: at series (to word! spec/1) + ((count spec word!) + (count spec get-word!))
+		old: skip new ((count spec word!) + (count spec get-word!))
 	]
-	append tgt old
+	unless empty? old [append tgt old]
 	either self [head change/part series tgt tail series][tgt]
 ]
+
+#assert [[#"a" #"b" #"c"]    = map-each c "abc" [c]]
+#assert [[#"a" #"c" #"e"]    = map-each [a b] "abcde" [a]]
+#assert [[#"b" #"d" #[none]] = map-each [a b] "abcde" [b]]
+#assert [[#"b" #"d"]         = map-each [a b] "abcd" [b]]
 
 ; probe map-each/eval [x [integer!] y [integer! float!]] [1 2.0 3.0 4 5] [ [form x form y]]
 

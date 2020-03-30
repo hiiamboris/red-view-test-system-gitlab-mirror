@@ -6,8 +6,10 @@ Red [
 
 #include %dope.red
 #include %boxes.red
+#include %elasticity.red
 
 ; #where's-my-error?
+contrast-with: func [c] [to tuple! next to binary! add to integer! to binary! c 808080h]
 
 do-queued-events: does [
 	loop 100 [unless do-events/no-wait [break]]		;-- limit to 100 in case of a deadlock
@@ -19,9 +21,24 @@ activate: func [face [object!]] [
 	activate* face/state/1
 ]
 
+minimize: func [face [object!]] [
+	#assert [any [handle? face/state/1 integer? face/state/1]]
+	minimize* face/state/1
+]
+
+restore: func [face [object!]] [
+	#assert [any [handle? face/state/1 integer? face/state/1]]
+	restore* face/state/1
+]
+
+
+
 ;; default `face?` doesn't work on loaded stuff as it compare by object class id ):
 quacks-like-face?: func [o] [
-	empty? exclude exclude words-of face! words-of o [on-change* on-deep-change*]		;-- mold does not return on*change* 
+	all [
+		object? :o
+		empty? exclude exclude words-of face! words-of o [on-change* on-deep-change*]		;-- mold does not return on*change* 
+	]
 ]
 
 ;@@ TODO: when out of memory, re-run the clicker and continue where left off! because images are heavy and can't be known if in use
@@ -30,16 +47,18 @@ quacks-like-face?: func [o] [
 screenshot: does [capture]		;-- no refinements for it
 
 
+gen-name-for-capture: does [#composite %"(current-key)-capture-(timestamp).png"]
+
 save-capture: function [im [image!]] [
 	#assert [0 < length? im "cannot save an empty capture!"]
-	name: #composite %"(current-key)-capture-(timestamp).png"
+	name: gen-name-for-capture
 	part: skip tail name -4
 	i: 0
 	while [exists? name] [
 		append clear part rejoin ["-" i: i + 1 ".png"]
 	]
 	save/as name im 'png
-	im
+	name
 ]
 
 ;@@ TODO: automatic screen capture test as well, and check the RAM growth, and also the desktop (or artificial) background color
@@ -59,10 +78,7 @@ capture: function [
 	]
 	im: grab-screenshot* im nw attempt [se - nw]
 	#assert [0 < length? im "empty capture detected!"]
-	unless no-save [
-		save-capture im
-		log-image im
-	]
+	unless no-save [log-image/name im save-capture im]
 	im
 ]
 
@@ -93,6 +109,7 @@ capture-face: function [
 		]
 		capture/area/real pix-ofs pix-ofs + pix-sz			;-- `capture` saves and logs the result
 	][
+		#assert [any [img  face? wndw]]						;-- if it just 'quacks-like', to-image branch will crash
 		default img: [to-image wndw]
 		brdr: borders-of wndw
 		either window? [
@@ -103,18 +120,20 @@ capture-face: function [
 			img: get-image-part img pix-ofs pix-sz
 		]
 		#assert [0 < length? img]
-		save-capture img									;-- manually save and log the result
-		log-image img
+		log-image/name img save-capture img						;-- manually save and log the result
 		img
 	]
 ]
 
 
-image-isochromatic?: func [image [image!]] [
+image-monochromatic?: image-isochromatic?: func [image [image!]] [
 	2 >= length? get-colorset image
 ]
 
-image-empty?: function [image [image!]] [
+image-empty?: function [
+	"Check if the IMAGE is empty (that is isochromatic and of window background color)"
+	image [image!]
+][
 	col: system/view/metrics/colors
 	#assert [col/window]	;-- these should be defined by the backend	
 	#assert [col/panel]
@@ -211,7 +230,7 @@ matching-colorsets?: function [
 	"Check if images IM1 and IM2 have similar color sets"
 	im1		[image!]
 	im2		[image!]
-	fuzz	[percent!] "Coverage comparison fuzziness (0% = strict)"
+	fuzz	[percent!] "Coverage comparison fuzziness, absolute (0% = strict)"
 ][
 	cs1: get-colorset im1
 	cs2: get-colorset im2
@@ -376,6 +395,7 @@ visually-similar?: function [
 ; ]
 
 
+;@@ TODO: explore lists too (e.g. lists of images)
 explore: function [
 	"Opens up a window to explore an image in detail"
 	im [image!]
@@ -391,7 +411,7 @@ explore: function [
 	crop-sz: full-size * 1x2 / 2 / factor / 2 * 2		;-- cropped image size in pixels, even
 	crop-im: make image! crop-sz
 	magn-im: make image! crop-sz * factor				;-- magnified image
-	fnt: make font! [name: "Courier New" size: 7]
+	fnt: make font! [name: system/view/fonts/fixed size: 7]
 	either fit? [
 		im: upscale im factor
 		whole-sz: im/size
@@ -445,10 +465,10 @@ explore-artifact: function [art [object!]] [
 					exp-map/boxes: [if boxes [explore imprint-boxes copy image boxes magenta]]
 					exp-map/box:   [if box   [explore imprint-boxes copy image reduce [100% box/1 box/1 + box/2] cyan]]
 				]
-				view/options map-each [k v] to block! o [
+				view/flags/options elastic map-each [k v] to block! o [
 					compose/deep/only [
-						text 100 (rejoin [k ":"])
-						button 300 left (mold-part/flat :v 70)
+						text 60 (rejoin [k ":"])
+						button 300 left (mold-part/flat :v 70) #fill-x
 						on-click [
 							either act: select exp-map (to lit-word! k)
 								[do with o act]
@@ -456,7 +476,7 @@ explore-artifact: function [art [object!]] [
 						]
 						return
 					]
-				] [text: "Artifact"]
+				] 'resize [text: rejoin ["Artifact " attempt [k/key]]]
 			]
 			image? :v [
 				explore v
@@ -543,8 +563,9 @@ context [
 	coerce: func ['word [word!] type [datatype!] /local r] [
 		if any [word? get/any word path? get/any word] [set/any word get/any get word]
 		;@@ TODO: log-trace coercions?
-		also r: type = type? get/any word
-			unless r [log-trace #composite "coerce: (word) -> (mold-part/flat get/any word 40) [expected: (type)]"]
+		r: type = type? get/any word
+		; unless r [log-trace #composite "coerce: (word) -> (mold-part/flat get/any word 40) [expected: (type)]"]
+		:r
 	]
 
 	u->p: :units-to-pixels
@@ -558,7 +579,7 @@ context [
 		/local clr cnt
 	][
 		unless parse/case spec [
-			set verb opt ['almost | 'all] (default verb: ['all])
+			set verb opt ['somewhat | 'almost | 'all] (default verb: ['all])
 			[	set color issue! (color: to tuple! color)
 			|	set color [tuple! | word!] if (coerce color tuple!)
 			]
@@ -566,7 +587,7 @@ context [
 			set image [image! | word!] if (coerce image image!)
 		] [ERROR "amount-of: invalid color selection spec (mold spec)"]
 
-		req-match: select [all 100% almost 90%] verb		;-- required similarity of image colors to the one provided
+		req-match: select [all 99% almost 90% somewhat 75%] verb	;-- required similarity of image colors to the one provided
 		cs: get-colorset image
 		total: image/size/x * image/size/y
 		0% + sum map-each [clr cnt] cs [				;-- count coverage of matching colors; 0% so it always returns %
@@ -617,9 +638,9 @@ context [
 
 		=coverage=: [
 			opt quote coverage:
-			set cover-op opt ['= | '> | '< | '<= | '>=]
+			set cover-op opt ['~= | '> | '< | '<= | '>=]
 			set coverage percent!
-			(default cover-op: ['=])
+			(default cover-op: ['~=])
 		]
 
 		=coloration=: [
@@ -642,23 +663,13 @@ context [
 		unless parse/case spec =spec= [ERROR "Invalid box spec: (mold spec)"]	;@@ TODO: better error report (like area=none)
 
 		image: where
-
-		; foreach [word type] [
-		; 	image  image!
-		; 	area   object!		;-- can be result of `box` or a face!
-		; 	size   pair!
-		; 	offset pair!
-		; 	color  tuple!
-		; ][
-		; 	type: get type
-		; 	word: get word
-		; 	if any [word? :word path? :word] [
-		; 		value: get word
-		; 		unless type = type? :value [
-		; 			ERROR "Invalid box spec (mold spec): (word) evaluates to (mold type? :value), expected (mold type)"
-		; 		]
-		; 	]
-		; ]
+		if quacks-like-face? area [
+			;; face doesn't have a `base` offset, so should be translated properly
+			area: object compose [
+				offset: (face-to-window 0x0 area)
+				size: (area/size)
+			]
+		]
 
 		words: [where-op image area h-anchor v-anchor offset size cover-op coverage color-op color]
 		object map-each/eval w words [[to set-word! w 'quote get w]]
@@ -683,7 +694,8 @@ context [
 		;@@ TODO: maybe exclude borders? eat a pixel from all sides? to account for scaling inaccuracies
 
 		cov/colorset: cs: get-colorset image
-		req-match: select [all 100% almost 90% somewhat 75%] spec/color-op		;-- required similarity of image colors to the one provided
+		;; tip: using 99% for `all` because of GDI+ bugs, which were fixed by making brush alpha = 254 (see #3165)
+		req-match: select [all 99% almost 90% somewhat 75%] spec/color-op		;-- required similarity of image colors to the one provided
 		total: image/size/x * image/size/y
 		cov/amount: coverage: sum map-each [color count] cs [		;-- count coverage of matching colors
 			match: 100% - contrast color spec/color
@@ -726,7 +738,7 @@ context [
 		bestbox: function [image area] [
 			#assert [object? area]
 			art/edges: edges: find-edges image
-			xy2: area/size + xy1: area/offset + any [area/base 0x0]
+			xy2: area/size + xy1: area/offset + any [attempt [area/base] 0x0]
 			set [prob xy1 xy2]  fit-box  edges  u->p xy1  u->p xy2
 			all [										;-- return none or [offset size]
 				0 <> prob								;-- 0% = no match
@@ -754,13 +766,12 @@ context [
 			if spec/area [			;-- won't be needing the whole image; crop it
 				art/image: image: get-image-part
 					image
-					u->p base: spec/area/offset + any [spec/area/base 0x0]
+					u->p base: spec/area/offset + base
 					u->p spec/area/size
 			]
 			area: spec				;-- else use offset & size from spec itself
 		]
-
-		art/box: box: either spec/offset [		;-- no need to extract all boxes - have size and offset
+		art/box: box: either area/offset [		;-- no need to extract all boxes - have size and offset
 			#assert [none? spec/h-anchor]		;-- anchors only make sense without offset
 			#assert [none? spec/v-anchor]
 			bestbox image area
@@ -778,11 +789,12 @@ context [
 				[object compose [offset: (p->u offset) size: (p->u size) base: (base)]]		;-- should be scaled, for compatibility with faces
 		]
 	]
+	;@@ TODO: test set for `box` as it's too easy to break!
+	;@@ TODO: assertions have to appear in the log too!
 
 
 	;@@ TODO: so far there's only one instance of this; write more tests using `text`; how the dialect will look like?
-	stack-friendly
-	parse-text-spec: function [
+	set 'parse-text-spec function [
 		"Internal. Parse text dialect spec block into an object"
 		spec [block!]
 		/local
@@ -795,6 +807,7 @@ context [
 			opt [quote anchors: | quote anchor:]
 			=h+v-anchors=
 		]
+		=align=: ['aligned =anchors=]
 
 		=where=: [
 			opt quote where:
@@ -807,10 +820,17 @@ context [
 			if (coerce where image!)
 			(default where-op: ['in])						;-- default to 'in' mode; allow op-less `where: image` expression
 		]
-		
+
+		=size=: [
+			opt quote size:
+			set size pair! set fuzziness opt percent!
+			(default fuzziness: [1%])
+		]
+
 		=spec=: [
-			'aligned =anchors= =where=
-		|	=where= 'aligned =anchors=
+			opt =size=  [opt =align= =where= | =where= opt =align=] end
+		|	opt =align= [opt =size=  =where= | =where= opt =size=] end
+		|	=where= [opt =align= opt =size= | opt =size= opt =align=] end
 		]
 
 		unless parse/case spec =spec= [ERROR "Invalid text spec: (mold spec)"]
@@ -818,30 +838,46 @@ context [
 		#assert [image? where]
 		image: where
 
-		words: [where-op image area h-anchor v-anchor]
+		words: [where-op image area h-anchor v-anchor size fuzziness]
 		object map-each/eval w words [[to set-word! w 'quote get w]]
 	]
 
 	;@@ TODO: better name? this is too common
+	;@@ TODO: describe it's spec; make manual tests
 	set 'text function [
-		"Verify text alignment with the provided SPEC"
+		"Verify text alignment and size with the provided SPEC"
 		spec [block!]
 	][
 		log-artifact art: object compose/only [
 			type: 'text
 			spec: (copy spec)
-			spec-obj: image: box: none
+			spec-obj: image: box: expected-size: found-size: result: none
 			key: current-key
 		]
 		art/spec-obj: spec: parse-text-spec spec
 		art/image: image: either spec/area [	;-- won't be needing the whole image; crop it
 			get-image-part
 				spec/image
-				u->p spec/area/offset + any [spec/area/base 0x0]
+				u->p spec/area/offset + any [attempt [spec/area/base] 0x0]
 				u->p spec/area/size
 		] [spec/image]
 		art/box: box: get-text-box image
-		check-alignment box/1 box/2 image/size spec/h-anchor spec/v-anchor
+		if empty? box [return art/result: none]				;-- no text found!
+
+		art/found-size: fsize: p->u box/2 - box/1
+
+		size-valid?: yes
+		if art/expected-size: esize: spec/size [
+			min-size: 1.0 - spec/fuzziness * esize
+			max-size: 1.0 + spec/fuzziness * esize
+			size-valid?: min-size .<=. fsize .<=. max-size
+		]
+		
+		align-valid?: yes
+		if any [spec/h-anchor spec/v-anchor] [
+			align-valid?: check-alignment box/1 box/2 image/size spec/h-anchor spec/v-anchor
+		]
+		art/result: all [align-valid? size-valid?]
 	]
 ]
 

@@ -4,6 +4,13 @@ Red [
 	license: 'BSD-3
 ]
 
+{
+	kinds of logging here:
+	- global text log is meant to be readable by the user and only for debugging the system, understanding the sequence and outcome of events
+	- artifacts produced by each issue are saved to a corresponding file - to be compared between test runs
+	;@@ TODO: log extract also should be saved as artefact, for it may contain errors/warnings which we wanna see gone in comparison
+}
+
 log-echo?: yes		;-- echo to console?
 
 message-log: make block! 500
@@ -17,6 +24,8 @@ current-key: function [/push newkey [string! none!] /back] [
 	any [last stk "GLOBAL"]
 ]
 
+log-mark: does [tail message-log]
+log-since: func [mark [block!]] [copy mark]
 
 log: function [
 	lvl [integer!] "0 = fatal, 1 = error, 2 = warning, 3 = info, 4 = trace"
@@ -26,16 +35,57 @@ log: function [
 	verbosity: 4
 	if lvl <= verbosity [
 		append message-log append line: copy msg #"^/"
-		write/append %log.txt line
+		write/append #composite %"(working-dir)log.txt" line
 		if log-echo? [print msg]
 	]
 ]
 
-log-artefact: log-artifact: func [art [object!]] [
+log-artefact: log-artifact: function [art [object!]] [
 	append message-log art
+	attempt [append issues/(art/key)/artifacts art]
+	;; can't save it here since values are gonna be updated after it's logged!
+	; write/append/lines #composite %"(key)-artifacts.red" mold/all/flat art
 ]
 
-log-image: func [im [image!]] [log-artifact object [type: 'image image: im key: current-key]]
+clean-artefacts: clean-artifacts: function [key [string!]] [
+	if exists? file: #composite %"(key)-artifacts.red" [write file {}]
+]
+
+compress-images: function ["Compress images in OBJ, in place" obj [object!]] [
+	foreach w words-of obj [
+		case [
+			image? i: select obj w [
+				i: save/as copy #{} i 'png
+				obj/:w: as paren! compose [load/as (i) 'png]
+			]
+			object? :i [compress-images i]
+		]
+	]
+	obj
+]
+
+save-artefacts: save-artifacts: function [key [string!]] [
+	clean-artifacts key		;@@ is there a point in holding results from multiple runs?
+	objs: issues/:key/artifacts
+
+	foreach o objs [
+		#assert [o/key = key]
+		if o/type = 'context [continue]					;-- may contain huge images, and they are duplicates anyway - unpractical to save
+		either all [o/type = 'image  select o 'file] [	;-- do not mold the whole image if it's saved; leave the code to load it instead
+			o: copy o
+			o/image: as paren! compose [load/as (o/file) 'png]
+		][	o: compress-images copy/deep o
+		]
+		;; images are still too huge and saving them slows down testing by a lot
+		;; so we have to compress each one
+		write/append/lines #composite %"(key)-artifacts.red" mold/all/flat o
+	]
+]
+
+log-image: func [im [image!] /name fname [file! string!]] [
+	default fname: [gen-name-for-capture]
+	log-artifact object [type: 'image image: im file: fname key: current-key]
+]
 
 fatal:  log-fatal: func [msg [string!]] [log 0 rejoin ["*** F A T A L ***: " msg]]
 panic:  log-error: func [msg [string!]] [log 1 rejoin ["ERROR: " msg]]
@@ -46,23 +96,27 @@ inform: log-info:  func [msg [string!]] [log 3 msg]
 warn-if:  func [cond [block!] msg [string!]] [if do cond [warn  msg]]
 panic-if: func [cond [block!] msg [string!]] [if do cond [panic msg]]
 
-log-review: function [] [	;; report errors if any
-	unless empty? message-log [		;@@ TODO: when area becomes programmatically scrollable, get rid of reverse
+log-review: function [/key title [string!]] [	;-- report errors if any
+	unless empty? message-log [
 		msgs: keep-type message-log string!
 		arts: keep-type message-log object!
-		artstrings: map-each [x] arts [rejoin [attempt [x/key] ": " replace/all form/part x 50 #"^/" #" "]]
+		artstrings: map-each [x] arts [rejoin [select x 'key ": " replace/all form/part x 50 #"^/" #" "]]
 		set 'message-log tail message-log
-		view/options [
-			area font-name "Lucida Console" wrap 500x500 with [text: form msgs]
-			; area font-name "Lucida Console" wrap 500x500 with [text: form reverse msgs]
-			below
-			text "Artifacts:"
-			tl: text-list 300x450 data artstrings on-dbl-click [
-				if art: pick arts event/picked [explore-artifact art]
+		view/flags/options elastic compose [
+			space 2x2 below
+			text #scale (any [title current-key])
+			area #scale font-name (system/view/fonts/fixed) wrap 500x475 with [text: form msgs]
+			return
+			text "Artifacts:" #fix
+			tl: text-list 300x450 #fill-y #scale-x data artstrings on-dbl-click [
+				all [
+					event/picked		;-- `none` when misses the line
+					art: pick arts event/picked
+					explore-artifact art
+				]
 			]
-			button "OK" focus [unview/only event/window]
-		] [text: "Error log"]
-		; ] [text: "(Reversed) error log"]
+			button #fix "OK" focus [unview/only event/window]
+		] 'resize [text: "Error log"]
 	]
-	;; @@ TODO: browse artifacts
+	set 'message-log tail message-log
 ]
