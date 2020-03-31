@@ -1,3 +1,3 @@
 @pushd %~dp0
-view-test-console perspective.red
+start view-test-console perspective.red
 @popd

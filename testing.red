@@ -620,24 +620,25 @@ toolset: context [
 		task: compile-tasks/:key
 		; assert [not none? task]
 		any [
-			all [task task/finished?]
+			; all [task task/finished?]
 			exists? #composite %"(key)-code.exe"	;-- allow user to provide the exe ;@@ TODO: make it portable
 		]
 	]
 
-	set 'do-compiled-tests function ["Test all compiled issues that were interrupted by compilation"] [
-		unless while-waiting 0:10:0 [not empty? compile-tasks] [		;@@ TODO: how much to wait?
-			foreach [key task] compile-tasks [
-				jobs/read-task-report task/worker			;-- update it's state
-				if task/finished? [
-					test-issue key
-					remove/key compile-tasks key
-					break				;-- better not to rely on foreach after removal and restart iterations
-				]
-			]
-			wait 0.1
-		] [ERROR "Could not finish issues compilation!"]
-	]
+	; OBSOLETE - does not catch compile errors
+	; set 'do-compiled-tests function ["Test all compiled issues that were interrupted by compilation"] [
+	; 	unless while-waiting 0:10:0 [not empty? compile-tasks] [		;@@ TODO: how much to wait?
+	; 		foreach [key task] compile-tasks [
+	; 			jobs/read-task-report task/worker			;-- update it's state
+	; 			if task/finished? [
+	; 				test-issue key
+	; 				remove/key compile-tasks key
+	; 				break				;-- better not to rely on foreach after removal and restart iterations
+	; 			]
+	; 		]
+	; 		wait 0.1
+	; 	] [ERROR "Could not finish issues compilation!"]
+	; ]
 
 
 	compile: function [
@@ -661,8 +662,10 @@ toolset: context [
 
 		key: current-key
 		assert [not none? key]						;-- require a unique name
-		src-file: #composite %"(key)-code.red"		;-- paths fed to worker are relative to where worker has been started!
-		exe-file: #composite %"(key)-code.exe"		;@@ TODO: make it portable
+		;; paths fed to worker are relative to where worker has been started!!!
+		;; but since we may have moved into another results directory, we need full pathnames
+		src-file: #composite %"(what-dir)(key)-code.red"	
+		exe-file: #composite %"(what-dir)(key)-code.exe"		;@@ TODO: make it portable
 		if exists? exe-file [return exe-file]		;-- return the exe name if it exists
 
 		write src-file code

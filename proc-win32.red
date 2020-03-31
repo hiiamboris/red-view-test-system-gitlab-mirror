@@ -30,7 +30,8 @@ kill-process-tree: function [
 
 start-exe: function [exe [file!] /output out [file!]] [
 	assert [exists? exe]
-	pid: either output [call/show/shell #composite {"(exe)" >"(out)"}][call/show exe]		;-- >output doesn't work without /shell
+	exe: to-local-file exe
+	pid: either output [call/show/shell #composite {"(exe)" >"(to-local-file out)"}][call/show exe]		;-- >output doesn't work without /shell
 	assert [pid <> -1]
 	handle: get-pid-handle pid
 	; handle: process-into-job handle

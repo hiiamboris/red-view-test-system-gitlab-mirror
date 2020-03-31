@@ -230,13 +230,14 @@ context [												;-- hide everything in a context from accidental modificati
 				arrows: last base/draw/6				;-- draw arrows on issues with results better or worse than comparison
 				#assert [block? arrows]
 				imp: get-improvement key
-				c: white - (base/color - 100)						;-- somewhat inverted + brighter
+				; c: white - (base/color - 100)						;-- somewhat inverted + brighter
+				c: contrast-with base/color
 				case [
 					'? = imp [										;-- suspicious result
 						append clear arrows compose [pen (c) font tile-font text 0x0 "?"]
 					]
 					imp <> 0 [										;-- definite result
-						if imp < 0 [c: white - base/color - 100]	;-- somewhat inverted + darker
+						; if imp < 0 [c: white - base/color - 100]	;-- somewhat inverted + darker
 						base/draw/6/2: c
 						append clear arrows
 							map-each i gen-range abs imp [

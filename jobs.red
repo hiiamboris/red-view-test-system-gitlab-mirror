@@ -338,6 +338,9 @@ jobs: make any [value-of jobs  object!] [
 	read-heavy-reports: function ["Update all compilation tasks state"] [
 		foreach worker next workers [		;-- skip the main-worker
 			rep: read-task-report worker
+			if all [string? rep  err: find rep "Cannot access source file:"] [
+				panic #composite "Compilation task failed with:^/(err)"
+			]
 			while [rep <> new: read-task-report worker] [rep: new]	;-- stop reading when it returns either the same (busy) task or none
 		]
 	]

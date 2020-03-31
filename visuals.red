@@ -9,7 +9,8 @@ Red [
 #include %elasticity.red
 
 ; #where's-my-error?
-contrast-with: func [c] [to tuple! next to binary! add to integer! to binary! c 808080h]
+contrast-with: func [c] [white - c]
+; contrast-with: func [c] [to tuple! next to binary! add to integer! complement to binary! c C08040h]
 
 do-queued-events: does [
 	loop 100 [unless do-events/no-wait [break]]		;-- limit to 100 in case of a deadlock

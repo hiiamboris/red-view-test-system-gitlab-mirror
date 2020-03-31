@@ -2079,9 +2079,12 @@ issue/interactive #3173 [
 	    base 200x200 blue on-over [append list 'ok]
 	]
 	loop 2 [
+		wait 0.5			;-- let it detect the event
 		move-pointer top-window ~at~ [center]
+		wait 0.5			;-- let it detect the event
 		move-pointer 0x0
 	]
+	wait 0.5				;-- let it detect the event
 	list: sync list
 	expect [list = [ok ok ok ok]]		;-- 2 times in and 2 out = 4 events
 ]
@@ -2264,4 +2267,4 @@ issue #3120 [
 
 ;@@ TODO: #3116 - test like that is unreliable; should be a custom test that will try various fonts/labels
 
-;@@ TODO: setup & config
+;@@ TODO: add score button and platform name/id for screenshots
