@@ -262,6 +262,7 @@ get-image-part: func [img [image!] ofs [pair!] size [pair!] /into tgt [image!]] 
 
 
 ;@@ TODO: automatic zoom/exploration window for failed tests
+;@@ TODO: make a routine out of this
 upscale: function [image [image!] by [number!] /into tgt [image!]] [
 	cache: [0x0]										;-- somewhat faster this way
 	either cache/1 <> image/size [
@@ -282,6 +283,17 @@ upscale: function [image [image!] by [number!] /into tgt [image!]] [
 		]
 	]
 	draw any [tgt image/size * by] next cache
+]
+
+
+scale-to-fit: function [img [image!] size [pair!]] [
+	factor: size / max 1x1 img/size
+	factor: min factor/x factor/y
+	case [
+		factor > 1 [upscale img factor]
+		factor = 1 [img]
+		factor = 0 [draw size compose [image img 0x0 (size * 1x0) (size * 0x1)]]
+	]
 ]
 
 

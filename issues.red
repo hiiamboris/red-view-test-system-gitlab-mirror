@@ -2266,5 +2266,4 @@ issue #3120 [
 ]
 
 ;@@ TODO: #3116 - test like that is unreliable; should be a custom test that will try various fonts/labels
-
-;@@ TODO: add score button and platform name/id for screenshots
+;@@ TODO: WTH is with this window not obscuring taskbar & how to make it?

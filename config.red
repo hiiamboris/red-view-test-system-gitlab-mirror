@@ -1,4 +1,6 @@
-config: object [
-	;; you can change it to `console-view.exe` of the build of your choice (in OS format):
-	command-to-test: "red --cli"
+;; do not modify! (or deal with the possibility of overwrite)
+
+config: make object! [
+    command-to-test: "red --cli"
+    last-working-dir: %/D/devel/red/red-view-test/logs/run-20200408-001311-455/
 ]

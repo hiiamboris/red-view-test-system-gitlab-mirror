@@ -386,6 +386,10 @@ jobs: make any [value-of jobs  object!] [
 
 	; reset-system-words
 	init: does [
+		unless object? :config [config: object [command-to-test: none last-working-dir: none]]
+		unless attempt [config/command-to-test] [config: make config [command-to-test: "red --cli"]]
+		log-info #composite "Configured worker console is: (config/command-to-test)"
+
 		main-worker: start-worker
 		quit-gracefully: q: does [
 			stop-all-workers

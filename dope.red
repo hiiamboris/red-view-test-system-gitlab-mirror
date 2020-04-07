@@ -527,7 +527,6 @@ context [
 		"EXPR should evaluate to anything but false, none or unset, else count it as error"
 		expr [block!]
 		/local r
-		/extern score
 	][
 		log-artifact art: object compose [
 			type: 'condition
@@ -543,12 +542,12 @@ context [
 		]
 		e: try/all [set/any 'r trace-deep :inspect expr 'ok]
 
-		case [
+		append issues/(art/key)/score case [
 			error? e
-				[panic  #composite "(mold expr) errored out with^/(:e)"]
+				[panic  #composite "(mold expr) errored out with^/(:e)"  0.0]
 			any [unset? :r not :r]
-				[panic  #composite "(mold expr) check failed with (:r)^/(red-log)"]
-			'ok	[inform #composite "(mold expr) check succeeded"  art/success: yes  score: score + 1]
+				[panic  #composite "(mold expr) check failed with (:r)^/(red-log)"  0.0]
+			'ok	[inform #composite "(mold expr) check succeeded"  art/success: yes  1.0]
 		]
 		none					;-- no return value
 	]
@@ -559,7 +558,6 @@ context [
 		expr     [block!] "Code to evaluate"
 		expected [block!] "Range as [CRIT-LOW < LOW < IDEAL > HIGH > CRIT-HIGH]"	;@@ TODO: any reason to reduce words in the range?
 		/local val crit-lo crit-hi warn-lo warn-hi ideal
-		/extern score
 	][
 		log-artifact art: object compose [		;-- log it before any point of failure
 			type: 'parameter
@@ -588,21 +586,22 @@ context [
 			   set msg opt string! (default msg: [""])
 		]
 		panic-if [not parsed?] #composite "invalid expectations block: (mold expected)"
-		case [
+		append issues/(art/key)/score case [
 			any [val < crit-lo  val > crit-hi] [
 				panic #composite "(mold expr) yielded (val), outside critical range: (crit-lo) to (crit-hi). (msg)"
+				0.0
 			]
 			any [val < warn-lo  val > warn-hi] [
 				warn #composite "(mold expr) yielded (val), expected to be in range: (warn-lo) to (warn-hi). (msg)"
 				art/status: 'yellow
-				score: score + 0.5
+				0.5
 			]
 			'normally [
 				inform #composite "(mold expr) yielded (val), ideally should be (ideal)"
 				art/status: 'green
-				score: score + 1
+				1.0
 			]
-			;@@ TODO: use ideal value for rating computation?
+			;@@ TODO: use ideal value for score computation = 1.0, green = 0.9?
 		]
 		none					;-- no return value
 	]

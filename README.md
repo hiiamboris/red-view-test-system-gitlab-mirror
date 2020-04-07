@@ -90,7 +90,7 @@ Main point for now is to be able to run View regression tests *with little to no
 Previous experiments on automated testing have shown the limitations of Github CI/CD usage:
 - Choice of OS. E.g. many bugs may appear on W7 only and cannot be tested by GH.
 - OS settings. E.g. some issues may only be detected with scaling different than 100%, but GH provides only the default setting.
-- Lack of interactivity. View tests are much more complex than traditional assertion tests and require an UI to overview each test result to understand it. I find it unlikely that GH can provide it.
+- Lack of interactivity. View tests are much more complex than traditional assertion tests and require an UI to overview each test result to understand it. I find it unlikely that GH can adequately provide it.
 - Time span. There are certain limitations to how fast View tests can be run. E.g. Red window may require all the lower windows to finish drawing before it can redraw itself, thus requiring synchronization with the OS and other programs; single/double click event distinction; a lot of issues will require compilation in release mode; some issues will hang and require a timeout. Some of the image analysis functions are time consuming too.
 
 In this light, the system is meant to be run in user space. It's okay for it to be slow and even take an hour for a full run, as long as no user interaction is required during the run.
@@ -107,9 +107,11 @@ A success score constitutes the number of successful condition checks (thus it i
 
 ### Nitpicky testing
 
-Together with the success score, the system (once matures a bit) will provide an option to compare each image captured during a test run with a corresponding image from a previous test run, thus allowing to detect and flag even the tiniest deviations, which can never be reliably covered by the test logic (due to cross-platform differences). Deviations like the loss of font anti-alias or a shift by one pixel.
+It should be obvious that the cross-platform and cross-user reproducibility of test results is much lower than on the same machine and same OS. If we only apply (quite forgiving) cross-platform success criteria, we risk a lot of minor changes (possible regressions) on a single platform to go unnoticed.
 
-The system will display such deviations for an overview and approval, so the user may decide if it qualifies as a regression or an improvement.
+So, together with the success score, the system detects slightest deviations in test results between consecutive test runs and highlights that. Deviations like the loss of font anti-alias or a shift by one pixel.
+
+Future: Ideally I want it to evolve from side-by-side comparison of 2 result sets into a timeline-aware analysis tool where it will be able to pinpoint an exact commit where a regression (or improvement) happened.
 
 ### Manual tests
 

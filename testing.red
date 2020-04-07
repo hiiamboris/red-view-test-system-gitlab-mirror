@@ -40,8 +40,6 @@ reload: does [do/expand load #composite %"(startup-dir)testing.red" ()]		;-- loa
 
 unless value? 'main-worker [jobs/init]
 
-score: 0
-
 toolset: context [
 
 	{
@@ -115,6 +113,7 @@ toolset: context [
 				title:	either string? :vcode/1 [:vcode/1][none]
 				status: either flags/compiled ['not-compiled]['ready]
 				result: none
+				score:  make vector! [float! 32 0]		;-- should receive 0..1 from each test
 				log:    none
 				artifacts: copy []
 			]
@@ -235,7 +234,15 @@ toolset: context [
 		offload reduce [to set-word! word 'quote get word]		;@@ TODO: trap it
 	]
 
-	;@@ TODO: upon exiting the interactive issue code - offload [unview/all]
+	set 'get-build-info function ["Get current worker's version info"] [
+		object compose [
+			type: 'build
+			date: offload/return [any [attempt [system/build/git/date] system/build/date]]
+			commit: offload/return [attempt [system/build/git/commit]]
+			key: (key)
+		]
+	]
+	log-build-info: function ["Log current worker's version info"] [log-artefact get-build-info]
 
 	display: function [
 		"View LAYOUT in a main-worker thread; return the window object and sync all set-words"
@@ -470,7 +477,6 @@ toolset: context [
 		/variant vnum [integer!]
 		/no-review
 		/local code flags
-		/extern score
 	][
 		mark: log-mark
 
@@ -480,6 +486,12 @@ toolset: context [
 		]
 		#assert [find [ready tested] def/status]
 		#assert [not all [def/flags/compiled find [not-compiled compiling] def/status] "Issue has not been compiled!"]
+
+		clear def/score
+
+		;; log the build in which the test was run - otherwise it's impossible to trace the results back to a version
+		;; it may differ between issues when one is adding the results to an old run
+		log-build-info
 
 		code: def/code
 		;; log the issue context
@@ -505,17 +517,16 @@ toolset: context [
 		def/status: 'tested
 		msgs: rejoin ["" keep-type log-since mark string!]
 		foreach [marker word should-cond] [
+			;; string  result  spelling of should not
 			"WARNING:" warning #[none]			;-- order here: from the small evil to greater
 			"ERROR:"   error   error
 			"CRASHED!" crash   crash
 			"BUSY!"    freeze  hang
 		][
-			if find/case msgs marker [
-				result: word
-				continue						;-- score shouldn't be incremented
-			]
-			if find def/flags/should-not should-cond [	;-- condition affects the score
-				score: score + 1		;@@ TODO: or get rid of `should not *` completely?
+			if bad?: find/case msgs marker [result: word]
+			if find def/flags/should-not should-cond [		;-- condition affects the score
+												;@@ TODO: or get rid of `should not *` completely?
+				append def/score pick [1.0 0.0] not bad?
 			]
 		]
 		default result: ['ok]
@@ -523,6 +534,7 @@ toolset: context [
 		log-artifact object compose [
 			type:   'result
 			result: quote (result)
+			score:  def/score
 			key:    (key)
 		]
 		save-artifacts key		;-- save for later comparison
@@ -700,7 +712,7 @@ toolset: context [
 			handle: either no-output [
 				start-exe exe
 			][
-				basename: either %.exe = suffix? exe [clear skip tail copy exe -4][copy exe]
+				basename: either %.exe = suffix? exe [head clear skip tail copy exe -4][copy exe]
 				stdout: #composite %"(basename)-stdout.txt"
 				start-exe/output exe stdout
 			]

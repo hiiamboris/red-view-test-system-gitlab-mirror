@@ -19,6 +19,8 @@ context [												;-- hide everything in a context from accidental modificati
 		auto-testing?: no
 		scheduled-tests: []
 		comparison-dir: what-dir
+		scores-map: make hash! map-each/eval [k v] body-of issues [[k 0.0]]
+		score: is [sum extract next scores-map 2]
 	]
 
 	adapt-tile-size: function ["Reposition tiles to fit the window"][
@@ -29,20 +31,19 @@ context [												;-- hide everything in a context from accidental modificati
 		size: tile-space ** 0.5 * 1x1					;-- adjust tile size until all tiles are in
 		while [all [size/x > 1  n-tiles > space? ips / size]] [size: size - 1x1]
 		fits: ips / size								;-- number of tiles that fit horizontally & vertically
-
-		cached-fits: [0x0]								;-- caches the previous size
-		if fits = cached-fits/1 [exit]					;-- no action needed
-		cached-fits/1: fits
+		cache: [0x0 0x0]								;-- caches the previous grid & tile size
+		if cache = new: reduce [fits size] [exit]		;-- no action needed
+		change cache new
 
 		scope [
-			system/view/auto-sync?: no						;-- reposition everything
-			leaving [system/view/auto-sync?: yes]
+			maybe system/view/auto-sync?: no						;-- reposition everything
+			leaving [maybe system/view/auto-sync?: yes]
 			pane: issues-panel/pane
 			xyloop xy fits [
 				while [all [base: pane/1  base/type <> 'base]] [pane: next pane]		;@@ TODO: rewrite this using `lookup`? ;)
 				unless base [break]
-				base/size: size - 1x1						;-- 1x1 for spacing
-				base/offset: xy - 1x1 * size
+				maybe base/size: size - 1x1						;-- 1x1 for spacing
+				maybe base/offset: xy - 1x1 * size
 				pane: next pane
 			]
 		]		
@@ -111,11 +112,25 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 	]
 
+	var: var2: none
 	main-window: layout elastic collect [
+		var: get-build-info
+		var2: copy/part form any [var/commit ""] 8
 		keep compose/deep [
 			size (wsize: system/view/screens/1/size / 2x1 - 12x64)
 			backdrop #608
 			below
+			panel #608 #fill-x [
+				origin 0x0
+				text (wsize/x - 160) font-color #CB4 font-size 11
+					(#composite "Worker build date: (var/date) commit: (var2)^/OS: (system/platform)") #fill-x
+					on-dbl-click [write-clipboard (var2)]		;@@ not gonna work on Windows, which already copies the whole text
+				panel #608 #fix-x [
+					origin 0x0
+					text font-color #FE6 60 font-size 16 "Score:"
+					text font-color #FE6 60 font-size 16 "0" rate 2 on-time [maybe face/data: rea/score] return
+				]
+			]
 			panel #405 #fill-x [
 				below
 				load-cmp-btn: button 100 "Load reference..." :load-cmp-handler
@@ -123,15 +138,15 @@ context [												;-- hide everything in a context from accidental modificati
 				load-prv-btn: button 100 "Load previous"     :load-prv-handler
 				return
 
-				ref-label: text rate 2 on-time [maybe face/data: to-local-file rea/comparison-dir] (wsize/x - 260) font-size 13 #fill-x
-				cwd-label: text rate 2 on-time [maybe face/data: to-local-file what-dir]           (wsize/x - 260) font-size 13 #fill-x
+				ref-label: text font-color #BA4 rate 2 on-time [maybe face/data: to-local-file rea/comparison-dir] (wsize/x - 260) font-size 12 #fill-x
+				cwd-label: text font-color #BA4 rate 2 on-time [maybe face/data: to-local-file what-dir]           (wsize/x - 260) font-size 12 #fill-x
 				return
 
 				comp-btn: button 100 "Compile all" [start-compile-all] #fix-x
 				test-btn: button 100 "Stop tests" #fix-x :click-test-all-handler
 				react test-btn-reaction 
 				show-every: check true 100 "Show results?" #fix-x
-				rate 0:0:20 on-time [recycle]
+				rate 0:0:5 on-time [recycle]
 			]
 		]
 		keep [issues-panel: panel #608]
@@ -140,7 +155,8 @@ context [												;-- hide everything in a context from accidental modificati
 				base #95B black (key) extra 'issue
 				react [face/font/color: contrast-with face/color]
 				on-dbl-click [proceed-with face] on-up []
-				on-alt-up [explore-artifact issues/(face/text)]
+				on-alt-up [visual-comparison face/text]
+				; on-alt-up [explore-artifact issues/(face/text)]
 				all-over on-over :over-tile-handler
 			]
 		]
@@ -181,13 +197,16 @@ context [												;-- hide everything in a context from accidental modificati
 		jobs/read-heavy-reports						;-- update all compiling issues status
 		n-done: 0
 		scope [
-			system/view/auto-sync?: no
-			leaving [system/view/auto-sync?: yes]
+			maybe system/view/auto-sync?: no
+			leaving [maybe system/view/auto-sync?: yes]
 			foreach base issues-panel/pane [
 				unless all ['base = base/type 'issue = base/extra] [continue]
 				key: base/text
 				issue: issues/:key
 				#assert [issue]
+
+				rea/scores-map/:key: (1.0 * sum issue/score) / max 1 length? issue/score
+
 				if all [								;-- check & update compilation status
 					find [not-compiled compiling] issue/status
 					is-compiled? key					;-- may be true even for `not-compiled` issue when detects an exe
@@ -294,6 +313,7 @@ context [												;-- hide everything in a context from accidental modificati
 				not is-compiled? key
 				issue/status: 'not-compiled
 			]
+			clear issue/score				;-- not tested by default
 		]
 
 		suffix: "-artifacts.red"
@@ -303,7 +323,13 @@ context [												;-- hide everything in a context from accidental modificati
 				#assert [issue]				;-- should always be true unless we get rid of some issues definitions
 				issue/artifacts: arts: reduce load file
 				#assert [parse arts [some object!]]		;-- only objects allowed
-				result: none  foreach a arts [if a/type = 'result [result: a/result]]
+				result: none 
+				foreach a arts [				;@@ TODO: use `locate`
+					if a/type = 'result [
+						result: a/result		;-- load status
+						attempt [issue/score: a/score]		;-- load scores (if present)
+					]
+				]
 				if issue/result: result [issue/status: 'tested]
 			]
 		]
@@ -341,6 +367,57 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 	]
 
+
+	prep-for-comparison: function [
+		"Expands any saved images in object O into a new object (returned)"
+		o [object! none!]
+	][
+		if r: o [
+			r: copy o
+			foreach w words-of r [
+				if paren?  :r/:w [r/:w: do r/:w]
+				if object? :r/:w [attempt [r/:w: prep-for-comparison r/:w]]		;-- catch stack overflows if recurses
+			]
+		]
+		r
+	]
+
+	;; sets will be modified!!
+	compare-artifact-sets: function [set1 [block!] set2 [block!] /local a] [
+		;; TODO: this would really benefit from levenshtein's; for now dumb & linear
+		r: copy []
+		remove-each a set1 cond: [find [context build] a/type]		;-- ignore `context` which we don't save at all; and `build` which always differs
+		remove-each a set2 cond
+		key: attempt [select any [pick set1 1 pick set2 1] 'key]
+		repeat i max length? set1 length? set2 [		;@@ make this map-each over zip of sets?
+			if art1: prep-for-comparison pick set1 i [set1/:i: art1]
+			if art2: prep-for-comparison pick set2 i [set2/:i: art2]
+			append/only r cmp: compare-objects art1 art2
+			all [			;-- enforce equality of all keys - anything that's different should be highlighted
+				any [key <> select art1 'key  key <> select art2 'key]
+				not find cmp 'key
+				append cmp key
+			]
+		]
+		r
+	]
+
+	compare-objects: function [
+		"Compare 2 objects/artifacts and return a set of words that are different"
+		o1 [object! none!] o2 [object! none!]
+	][
+		r: copy []
+		unless all [o1 o2] [return r]
+		ws: words-of o1
+		art?: all [find ws 'key  find ws 'type]		;-- objects are artifacts?
+		if ws <> ws2: words-of o2 [append r difference ws ws2]
+		foreach w intersect ws ws2 [
+			if all [art?  w = 'file] [continue]			;-- ignore filenames - they're always different
+			if (select o1 w) <> (select o2 w) [append r w]
+		]
+		r
+	]
+
 	get-improvement: function ["Get improvement score of test KEY (-3 to +3 or '? when suspicious)" key [string!]] [
 		issue: issues/:key
 		#assert [issue]
@@ -362,21 +439,174 @@ context [												;-- hide everything in a context from accidental modificati
 
 		;; now that results are equal, look for subtle differences
 		arts: copy issue/artifacts
-		for-each [i: a] arts [if a/type = 'context [remove at arts i  break]]
+
+		;; this is done by `compare-artifact-sets` but with a lot more memory pressure, cuz it unpacks images
+		for-each [i: a] arts [if find [context build] a/type [remove at arts i  break]]		;-- ignore `context` which we don't save at all; and build which always differs
 		if (length? arts) <> length? cmp/artifacts [return '?]
-		repeat i length? arts [if arts/:i <> cmp/artifacts/:i [return '?]]
+
+		;@@ TODO: optimize this for less memory pressure
+		cmp: compare-artifact-sets arts copy cmp/artifacts		;-- blocks of words that differ
+		if 0 <> sum map-each c cmp [length? c] [return '?]
 		
 		;@@ TODO: on inspection - display the diff so it's clear where improvement is; allow to explore images side by side; allow to highlight areas of difference
 		0
 	]
 
+	get-build-from: function [
+		"Get build info from an artifact set"
+		artset [block!]
+	][
+		foreach a artset [					;@@ TODO: use `locate`
+			if a/type = 'build [
+				return #composite "(a/date) (either a/commit [to paren! a/commit][""])"
+			]
+		]
+		""
+	]
 
+	visual-comparison: function [
+		"Compare test results side-by-side"
+		key [string!]
+	][
+		prep: func [v [any-type!]] [if paren? :v [v: do v] :v]		;-- support for `(load/as .. 'png)
+		;@@ TODO: add other issue parameters (field) into the header! and call explore-* on those!
+		arts1: copy issues/:key/artifacts
+		arts2: copy comparison/:key/artifacts
+		build1: get-build-from arts1
+		build2: get-build-from arts2
+		diff: compare-artifact-sets arts1 arts2
+		view/flags elastic collect [
+			keep compose [
+				backdrop #608 space 10x4
+				text 300 #405 #FF4 #scale-x center "Current:" 
+				text 300 #405 #FF4 #scale-x center "Reference:" return
+				text 300 #405 #FF4 #scale-x center (build1)
+				text 300 #405 #FF4 #scale-x center (build2) return
+			]
+			keep map-each [i: ws] diff [
+				clr: pick [#5F4 #F45] empty? ws
+				code: compose/only [explore+compare (v1: arts1/:i) (v2: arts2/:i)]
+				compose/deep/only [
+					;; should be left-aligned to show the beginning of long strings, e.g. `make object! ..`
+					button 300x25 (mold/flat/part v1 100) glass (clr) #scale-x left on-click (code)
+					button 300x25 (mold/flat/part v2 100) glass (clr) #scale-x left on-click (code)
+					return
+				]
+			]
+		] 'resize
+	]
+
+	explore+compare: function [
+		"Compare 2 values side by side"
+		v1 [any-type!] v2 [any-type!]
+		/name nm /owners o1 o2
+		/builds "Specify console build versions where those objects were obtained"
+			b1 [object! none!] b2 [object! none!]
+	][
+		case [
+			; all [block?  :art1  block?  :art2]
+			all [object? :v1  object? :v2] [explore+compare-objects v1 v2]
+			all [image?  :v1  image?  :v2] [explore+compare-images v1 v2]
+			all [block?  :v1  block?  :v2  o1 o2] [
+				if all ['box = select o1 'type  'box = select o2 'type] [		;-- special cases for edges & boxes
+					switch nm [
+						edges [
+							explore+compare-images
+								imprint-edges copy o1/image o1/edges
+								imprint-edges copy o2/image o2/edges
+						]
+						boxes [
+							explore+compare-images
+								imprint-boxes copy o1/image o1/boxes magenta
+								imprint-boxes copy o2/image o2/boxes magenta
+						]
+						box [
+							explore+compare-images
+								imprint-boxes copy o1/image reduce [100% o1/box/1 o1/box/1 + o1/box/2] cyan
+								imprint-boxes copy o2/image reduce [100% o2/box/1 o2/box/1 + o2/box/2] cyan
+						]
+					]
+				]
+				;@@ TODO: explore blocks (lists) ability & somehow unite it with visual-comparison
+			]
+		]		;-- do not descend into scalars or if different types (then difference is obvious)
+		;@@ TODO: text - highlight different areas using rich-text & red background - requires levenshtein's
+		;; images: scale to fit, add a difference image
+		;; objects: word/value table, colored
+		;; @@ anything else?
+	]
+	
+	explore+compare-objects: function [
+		"Compare 2 objects side by side"
+		o1 [object!] o2 [object!]
+	][
+		diff: compare-objects o1 o2
+		view/flags elastic collect [
+			keep [
+				backdrop #608 space 10x4
+				text 300 #405 #FF4 #scale-x center "Current:" 
+				pad 70x0
+				text 300 #405 #FF4 #scale-x center "Reference:" return
+			]
+			ws: union words-of o1 words-of o2
+			keep map-each w ws [
+				clr: pick [#5F4 #F45] none? find diff w
+				v1: select o1 w
+				v2: select o2 w
+				code: compose/only [explore+compare/name/owners quote (:v1) quote (:v2) quote (w) (o1) (o2)]
+				compose/deep/only [
+					;; should be left-aligned to show the beginning of long strings, e.g. `make object! ..`
+					button 300x25 (mold/flat/part :v1 100) glass (clr) #scale-x left on-click (code)
+					text   60     (mold/flat w)            glass (clr) #scale-x center
+					button 300x25 (mold/flat/part :v2 100) glass (clr) #scale-x left on-click (code)
+					return
+				]
+			]
+		] 'resize
+	]
+
+	explore+compare-images: function [
+		"Compare 2 images side by side"
+		i1 [image!] i2 [image!]
+	][
+		ssize: system/view/screens/1/size
+		third: ssize - 100x200 / 3x1
+		i1': i1  i2': i2
+		if i1/size <> i2/size [
+			unisize: max i1/size i2/size
+			if i1/size <> unisize [i1': draw unisize [image i1]]
+			if i2/size <> unisize [i2': draw unisize [image i2]]
+		]
+
+		diff: make image! i1'/size
+		xyloop xy diff/size [if i1'/:xy = i2/:xy [diff/:xy: black]]	;@@ TODO: do this in R/S
+		i1':   scale-to-fit i1   third
+		i2':   scale-to-fit i2   third
+		diff': scale-to-fit diff third
+
+		view/flags elastic compose [
+			backdrop #608
+			text (third/x) #405 #FF4 #scale-x center "Current:" 
+			text (third/x) #405 #FF4 #scale-x center "Diff:" 
+			text (third/x) #405 #FF4 #scale-x center "Reference:" return
+			text (third/x) (#composite "size: (i1/size)") center #608 (clr: pick [#5F4 #F45] i1/size = i2/size)
+			pad (third * 1x0)
+			text (third/x) (#composite "size: (i2/size)") center #608 (clr) return
+			image i1'   on-down [explore i1]  			;@@ TODO: should be on-up, but see #4384
+			image diff' on-down [explore diff]
+			image i2'   on-down [explore i2]
+		] 'resize
+	]
+
+
+	;@@ should we automatically choose reference, or save/load to/from config?
+	; it can be boring to find it among the logs - a prefiltering might help but will disable the ability to use non-full results as reference
 	;; automatically compare to the previous reference run
 	;; %.reference.run file is created automatically when all tests were finished
-	cmp: runs: sort read %../
+	cmp: runs: sort/reverse read %../			;-- newer items come first
 	foreach dir runs [
 		if all [
-			find/match dir %run-
+			find/match dir %run-				;-- one can rename `run-` dirs but only by adding a suffix
 			exists? cmp: #composite %"../(dir).reference.run"
 		][
 			load-comparison #composite %"../(dir)"
