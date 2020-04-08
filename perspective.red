@@ -475,7 +475,7 @@ context [												;-- hide everything in a context from accidental modificati
 		build1: get-build-from arts1
 		build2: get-build-from arts2
 		diff: compare-artifact-sets arts1 arts2
-		view/flags elastic collect [
+		view/flags/options elastic collect [
 			keep compose [
 				backdrop #608 space 10x4
 				text 300 #405 #FF4 #scale-x center "Current:" 
@@ -493,7 +493,7 @@ context [												;-- hide everything in a context from accidental modificati
 					return
 				]
 			]
-		] 'resize
+		] 'resize [text: #composite "(key) comparison"]
 	]
 
 	explore+compare: function [
@@ -541,7 +541,7 @@ context [												;-- hide everything in a context from accidental modificati
 		o1 [object!] o2 [object!]
 	][
 		diff: compare-objects o1 o2
-		view/flags elastic collect [
+		view/flags/options elastic collect [
 			keep [
 				backdrop #608 space 10x4
 				text 300 #405 #FF4 #scale-x center "Current:" 
@@ -562,7 +562,7 @@ context [												;-- hide everything in a context from accidental modificati
 					return
 				]
 			]
-		] 'resize
+		] 'resize [text: "objects comparison"]
 	]
 
 	explore+compare-images: function [
@@ -584,7 +584,7 @@ context [												;-- hide everything in a context from accidental modificati
 		i2':   scale-to-fit i2   third
 		diff': scale-to-fit diff third
 
-		view/flags elastic compose [
+		view/flags/options elastic compose [
 			backdrop #608
 			text (  i1'/size/x) #405 #FF4 #scale-x center "Current:" 
 			text (diff'/size/x) #405 #FF4 #scale-x center "Diff:" 
@@ -595,7 +595,7 @@ context [												;-- hide everything in a context from accidental modificati
 			image i1'   on-down [explore i1]  			;@@ TODO: should be on-up, but see #4384
 			image diff' on-down [explore diff]
 			image i2'   on-down [explore i2]
-		] 'resize
+		] 'resize [text: "images comparison"]
 	]
 
 
