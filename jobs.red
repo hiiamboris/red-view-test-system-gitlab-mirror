@@ -142,7 +142,9 @@ jobs: make any [value-of jobs  object!] [
 					pos: none
 					forever [
 						wait 1e-2					;-- lessen CPU load
-						loop 5 [do-events/no-wait]	;-- process queued events
+						unless empty? system/view/screens/1/pane [		;-- 0.6.4 bug workaround
+							loop 5 [do-events/no-wait]					;-- process queued events
+						]
 						bin: read/binary/seek (mold stdin) ofs
 						if pos: find/tail bin %"^^/" [
 							ofs: ofs + offset? bin pos

@@ -586,12 +586,12 @@ context [												;-- hide everything in a context from accidental modificati
 
 		view/flags elastic compose [
 			backdrop #608
-			text (third/x) #405 #FF4 #scale-x center "Current:" 
-			text (third/x) #405 #FF4 #scale-x center "Diff:" 
-			text (third/x) #405 #FF4 #scale-x center "Reference:" return
-			text (third/x) (#composite "size: (i1/size)") center #608 (clr: pick [#5F4 #F45] i1/size = i2/size)
-			pad (third * 1x0)
-			text (third/x) (#composite "size: (i2/size)") center #608 (clr) return
+			text (  i1'/size/x) #405 #FF4 #scale-x center "Current:" 
+			text (diff'/size/x) #405 #FF4 #scale-x center "Diff:" 
+			text (  i2'/size/x) #405 #FF4 #scale-x center "Reference:" return
+			text (  i1'/size/x) (#composite "size: (i1/size)") center #608 (clr: pick [#5F4 #F45] i1/size = i2/size)
+			pad  (diff'/size * 1x0)
+			text (  i2'/size/x) (#composite "size: (i2/size)") center #608 (clr) return
 			image i1'   on-down [explore i1]  			;@@ TODO: should be on-up, but see #4384
 			image diff' on-down [explore diff]
 			image i2'   on-down [explore i2]

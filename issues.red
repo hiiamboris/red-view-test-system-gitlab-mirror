@@ -6,16 +6,8 @@ Red [
 
 ; #where's-my-error?
 
-;@@ TODO: separate file(s) for manual tests (clicker etc..)
+;@@ TODO: `close` should do platform-specific window closing action
 
-;@@ TODO: always use a fixed (white?) backdrop for windows - to screen out system settings ? will this play well with custom font colors?
-;@@ `display` should do/events until on-create actors finish
-;@@ TODO: clear reactions after every test
-;@@ `close` should do platform-specific window closing action
-;@@ TODO: console wherer one can play with tests: run a single test easily or a few, receiving a FULL report
-;@@ TODO: `issue` should check if test numbers do not repeat and should be able to tell a list of covered issues
-;@@ TODO: think in what cases it's possible to make screenshots (for later comparison and changes detection) and how!! important!
-;@@ TODO: copy/deep tests body
 ;; issue /types define what capabilities are given to the code: can it compile? can it interact?
 ;; point is not just clear definition, but that /compile & /layout can be parallelized but should not use screen-shots or actions
 
@@ -137,8 +129,14 @@ issue/interactive #4226 [
 	s1: shoot top-window
 	o1: fld/offset
 	expect [box [at s1 fld/offset fld/size]]
+
 	drag fld [right by 20]
+	offload [		;-- remove the (blinking) cursor from the screenshots or it will be a false positive in comparison
+		fld/parent/selected: none
+		loop 10 [do-events/no-wait]
+	]
 	s2: shoot top-window
+
 	fld: sync fld
 	expect [fld/offset/y = o1/y]
 	param  [fld/offset/x - o1/x] [17 < 18 < 20 > 22 > 23]
@@ -155,7 +153,7 @@ issue/interactive #4221 [		;-- /interactive to have DISPLAY
 	s1: to-image system/view/screens/1
 	log-image s1
 	s2: screenshot
-	s1: capture-face/whole/with b s1		;-- exclude irrelevant areas, esp. the taskbar
+	s1: capture-face/whole/with b s1		;-- exclude irrelevant areas
 	s2: capture-face/whole/with b s2
 	expect [s1 = s2]
 ]
@@ -1435,8 +1433,8 @@ issue #3661 [
 	"Screen grabbing isn't DPI aware yet"
 	
 	sz1: offload/return [i: to image! system/view/screens/1  i/size]
-	i2: screenshot
-	expect [sz1 = i2/size]
+	sz2: units-to-pixels system/view/screens/1
+	expect [sz1 - i2/size .<. 5x5]		;-- allow some rounding error
 ]
 
 issue/interactive #3656 [			;-- planned to be fixed in 0.9.x
@@ -2266,4 +2264,3 @@ issue #3120 [
 ]
 
 ;@@ TODO: #3116 - test like that is unreliable; should be a custom test that will try various fonts/labels
-;@@ TODO: WTH is with this window not obscuring taskbar & how to make it?

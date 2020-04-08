@@ -164,8 +164,11 @@ toolset: context [
 		wait 0.2		;-- delay for OS to realize the worker process has stopped
 		unless jobs/alive? main-worker [
 			;@@ TODO: subtract something from the score on crash??
-			panic #composite "main-worker has CRASHED! during execution of:^/(mold main-worker/last-code)"
 			output: jobs/peek-worker-output main-worker		;-- read it's last wish
+			panic #composite "main-worker has CRASHED! during execution of:^/(mold main-worker/last-code)^/with message:^/(output)"
+			if find output "Invalid encapsulated data" [
+				print "TIP: create a batch file or specify a full path in the config!^/"
+			]
 			jobs/restart-worker main-worker
 			output
 		]
@@ -488,6 +491,7 @@ toolset: context [
 		#assert [not all [def/flags/compiled find [not-compiled compiling] def/status] "Issue has not been compiled!"]
 
 		clear def/score
+		clear def/artifacts			;-- forget artifacts otherwise comparison will show dupes
 
 		;; log the build in which the test was run - otherwise it's impossible to trace the results back to a version
 		;; it may differ between issues when one is adding the results to an old run

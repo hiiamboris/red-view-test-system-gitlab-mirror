@@ -6,10 +6,13 @@ Red [
 
 
 {
+	EDGE formats:
+		horizontal: [probability y x1 x2 ..]
+		vertical:   [probability x y1 y2 ..]
 	BOX formats:
-	found glyphs:     [xy1 xy2 ..]
-	boxes from edges: [probability xy1 xy2 ..]
-	box dialect result (not here): object [size: .. offset: ..  ...]
+		found glyphs:     [xy1 xy2 ..]
+		boxes from edges: [probability xy1 xy2 ..]
+		box dialect result (not here): object [size: .. offset: ..  ...]
 }
 
 boxes-ctx: context [

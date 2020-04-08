@@ -9,8 +9,16 @@ Red [
 #include %elasticity.red
 
 ; #where's-my-error?
-contrast-with: func [c] [white - c]
-; contrast-with: func [c] [to tuple! next to binary! add to integer! complement to binary! c C08040h]
+; contrast-with: func [c] [white - c]
+contrast-with: function [c] [
+	c: white - c		;-- invert it (but that won't have any effect for grey)
+	;; now push it towards the closest limit (black or white)
+	mean: c/1 + c/2 + c/3 / 3
+	either mean <= 128 [
+		c: c - (min c/1 min c/2 c/3) / 2
+	][	c: c - (255 - (max c/1 max c/2 c/3) / 2)
+	]
+]
 
 do-queued-events: does [
 	loop 100 [unless do-events/no-wait [break]]		;-- limit to 100 in case of a deadlock
@@ -45,7 +53,7 @@ quacks-like-face?: func [o] [
 ;@@ TODO: when out of memory, re-run the clicker and continue where left off! because images are heavy and can't be known if in use
 
 
-screenshot: does [capture]		;-- no refinements for it
+screenshot: has ["Grab a screenshot without the taskbar"] [capture/no-taskbar]		;-- no refinements for it
 
 
 gen-name-for-capture: does [#composite %"(current-key)-capture-(timestamp).png"]
@@ -69,6 +77,7 @@ capture: function [
 	/area nw [pair!] se [pair!] "Specify north-west and south-east corners rather than the whole screen"
 	/real "NW and SE are in pixels (default: units)"
 	/no-save "Do NOT save the image automatically"
+	/no-taskbar "Try to remove the taskbar from the screenshot when shooting the whole screen"
 ][
 	#assert [any [not area  nw/x < se/x]]
 	#assert [any [not area  nw/y < se/y]]
@@ -79,6 +88,7 @@ capture: function [
 	]
 	im: grab-screenshot* im nw attempt [se - nw]
 	#assert [0 < length? im "empty capture detected!"]
+	if all [no-taskbar  not area] [im: discard-taskbar im]
 	unless no-save [log-image/name im save-capture im]
 	im
 ]
@@ -157,6 +167,43 @@ find-edges: func [
 ]
 
 
+;; the moment worker (another process) displays a view, the taskbar pops up over the background
+;; we don't want to analyze taskbar contents, so have cut it off programmatically
+;@@ TODO: the logic will be different for other platforms
+discard-taskbar: function [
+	"Get part of the screenshot without the taskbar"
+	shot [image!]
+	/local he ve
+][
+	set [he ve] find-edges shot
+	;; - not considering the extreme "taskbar of half of the screen size" conditions here!
+	;; - it's important to choose the farthest line from the screen corner as edges are tripled usually
+	;; @@ what about widget panels? can they also jump on top of the background?
+	ss: shot/size
+	reserve: ss - 50		;@@ ok to have 50px reserve? 2px must work in most setups
+	band: 100
+	foreach [x y edges] [x y he y x ve] [
+		chosen: dist: 0
+		foreach [pro y0 x1 x2] get edges [					;-- find where to cut from
+			all [
+				x2 - x1 >= reserve/:x						;-- wide enough edge
+				any [band >= d: y0  band >= d: ss/:y - y0]	;-- close enough to screen corners
+				d > dist									;-- further than the chosen line from the corners
+				dist: d  chosen: y0							;-- choose it
+			]
+		]
+		if dist > 2 [										;-- 2px is too small for taskbar
+			ofs: chosen * mask: select [x 0x1 y 1x0] x
+			return either chosen <= band [
+				get-image-part  shot  ofs  ss - ofs				;-- cut from the top/left
+			][	get-image-part  shot  0x0  ss - (ss * mask - ofs)	;-- from the bottom/right
+			]
+		]
+	]
+	shot
+]
+
+
 ;; right now simple - just chooses a box with the biggest area, no less than 50x50 (otherwise detects taskbar)
 find-window-on: function [
 	"On a solid background - find a window (return it as object [size: offset:]); or none"
@@ -193,10 +240,10 @@ imprint-edges: function [
 	~:  make op! :as-pair
 	++: make op! :at
 	foreach [prob y x1 x2] edges/1 [
-		for x x1 x2 [i: im ++ (x ~ y) i/1: white - i/1 * prob + (1.0 - prob * i/1)]
+		for x x1 x2 [i: im ++ (x ~ y) i/1: 1.0 - prob * i/1 + (prob * contrast-with i/1)]
 	]
 	foreach [prob x y1 y2] edges/2 [
-		for y y1 y2 [i: im ++ (x ~ y) i/1: white - i/1 * prob + (1.0 - prob * i/1)]
+		for y y1 y2 [i: im ++ (x ~ y) i/1: 1.0 - prob * i/1 + (prob * contrast-with i/1)]
 	]
 	im
 ]
