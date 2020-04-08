@@ -26,6 +26,7 @@ boxes-ctx: context [
 		"Verify if box XY1-XY2 inside TOTAL size is aligned according to given anchors"
 		xy1 [pair!] xy2 [pair!] total [pair!] h-anchor [word! none!] v-anchor [word! none!]
 	][
+		unless xy1 .<. xy2 [return none]		;-- text of zero or negative size - should fail
 		;; center requires balance of low and high margin
 		;; low / high require closeness to the edge
 		mo: 6 * system/view/metrics/dpi / 96	;-- anchors 'max offset': how far from the edge box can be located

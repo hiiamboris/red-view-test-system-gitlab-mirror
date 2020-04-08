@@ -180,8 +180,8 @@ discard-taskbar: function [
 	;; - it's important to choose the farthest line from the screen corner as edges are tripled usually
 	;; @@ what about widget panels? can they also jump on top of the background?
 	ss: shot/size
-	reserve: ss - 50		;@@ ok to have 50px reserve? 2px must work in most setups
-	band: 100
+	reserve: ss - units-to-pixels 50		;@@ ok to have 50px reserve? 2px must work in most setups
+	band: units-to-pixels 100
 	foreach [x y edges] [x y he y x ve] [
 		chosen: dist: 0
 		foreach [pro y0 x1 x2] get edges [					;-- find where to cut from
@@ -922,9 +922,8 @@ context [
 				u->p spec/area/size
 		] [spec/image]
 		art/box: box: get-text-box image
-		if empty? box [return art/result: none]				;-- no text found!
-
 		art/found-size: fsize: p->u box/2 - box/1
+		if any [empty? box  fsize = 0x0] [return art/result: none]		;-- no text found!
 
 		size-valid?: yes
 		if art/expected-size: esize: spec/size [
