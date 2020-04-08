@@ -190,6 +190,20 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 	]
 
+	j: none
+	arrow-shapes: map-each/eval imp [-3 -2 -1 0 1 2 3] [[
+		imp
+		map-each i gen-range abs imp [
+			compose/only [
+				translate (i - 1 * 0x10)
+				(pick [
+					[ shape [move 5x13 'line 0x-5 10x-5 10x5  0x5 -10x-5 close] ]
+					[ shape [move 5x3  'line 0x5  10x5  10x-5 0x-5 -10x5 close] ]
+				] imp > 0)
+			]
+		]
+	]]
+
 	tile-font: make font! [size: 20]
 	update-tiles: function ["Update each tile's colors & decorations depending on respective issue's state"] [
 		unless jobs/alive? main-worker [exit]		;-- happens when exiting, or during the crash
@@ -251,25 +265,18 @@ context [												;-- hide everything in a context from accidental modificati
 				imp: get-improvement key
 				; c: white - (base/color - 100)						;-- somewhat inverted + brighter
 				c: contrast-with base/color
-				case [
+				arrows': case [
 					'? = imp [										;-- suspicious result
-						append clear arrows compose [pen (c) font tile-font text 0x0 "?"]
+						compose [pen (c) font tile-font text 0x0 "?"]
 					]
 					imp <> 0 [										;-- definite result
 						; if imp < 0 [c: white - base/color - 100]	;-- somewhat inverted + darker
-						base/draw/6/2: c
-						append clear arrows
-							map-each i gen-range abs imp [
-								compose/only [
-									translate (i - 1 * 0x10)
-									(pick [
-										[ shape [move 5x13 'line 0x-5 10x-5 10x5  0x5 -10x-5 close] ]
-										[ shape [move 5x3  'line 0x5  10x5  10x-5 0x-5 -10x5 close] ]
-									] imp > 0)
-								]
-							]
+						maybe base/draw/6/2: c
+						select/skip arrow-shapes imp 2
 					]
+					'else [ [] ]
 				]
+				unless arrows = arrows' [append clear arrows arrows']
 			];; foreach base issues-panel/pane [
 		];; scope [
 
@@ -371,15 +378,19 @@ context [												;-- hide everything in a context from accidental modificati
 	prep-for-comparison: function [
 		"Expands any saved images in object O into a new object (returned)"
 		o [object! none!]
-	][
-		if r: o [
+	] compose [
+		cache: (make hash! [])
+		if o [
+			if r: select/same cache o [return r]
 			r: copy o
 			foreach w words-of r [
 				if paren?  :r/:w [r/:w: do r/:w]
 				if object? :r/:w [attempt [r/:w: prep-for-comparison r/:w]]		;-- catch stack overflows if recurses
 			]
+			if 1000 < length? cache [clear cache]		;-- reset in case it grows too much
+			repend cache [o r]
+			r
 		]
-		r
 	]
 
 	;; sets will be modified!!
@@ -418,7 +429,11 @@ context [												;-- hide everything in a context from accidental modificati
 		r
 	]
 
-	get-improvement: function ["Get improvement score of test KEY (-3 to +3 or '? when suspicious)" key [string!]] [
+	get-improvement: function [
+		"Get improvement score of test KEY (-3 to +3 or '? when suspicious)"
+		key [string!]
+		/local res arts1 arts2
+	][
 		issue: issues/:key
 		#assert [issue]
 		unless all [
@@ -437,19 +452,29 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 		;@@ TODO: consider closeness to ideal parameters here?
 
+		cache: #()								;-- greatly reduces CPU & RAM load
+		set [res arts1 arts2] cache/:key
+		all [
+			arts1 =? issue/artifacts
+			arts2 =? cmp/artifacts
+			return res
+		]
+
 		;; now that results are equal, look for subtle differences
 		arts: copy issue/artifacts
 
 		;; this is done by `compare-artifact-sets` but with a lot more memory pressure, cuz it unpacks images
-		for-each [i: a] arts [if find [context build] a/type [remove at arts i  break]]		;-- ignore `context` which we don't save at all; and build which always differs
-		if (length? arts) <> length? cmp/artifacts [return '?]
+		remove-each a arts [find [context build] a/type]		;-- ignore `context` which we don't save at all; and build which always differs
+		either (length? arts) <> length? cmp/artifacts [
+			res: '?
+		][
+			;@@ TODO: optimize this for less memory pressure
+			cmprslt: compare-artifact-sets arts copy cmp/artifacts		;-- blocks of words that differ
+			res: pick [? 0] 0 <> sum map-each c cmprslt [length? c]
+		]
 
-		;@@ TODO: optimize this for less memory pressure
-		cmp: compare-artifact-sets arts copy cmp/artifacts		;-- blocks of words that differ
-		if 0 <> sum map-each c cmp [length? c] [return '?]
-		
-		;@@ TODO: on inspection - display the diff so it's clear where improvement is; allow to explore images side by side; allow to highlight areas of difference
-		0
+		cache/:key: reduce [res issue/artifacts cmp/artifacts]
+		res
 	]
 
 	get-build-from: function [

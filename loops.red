@@ -242,7 +242,7 @@ naive-map-each: func ['spec [word! block!] series [series!] code [block!] /only 
 
 ;; leverages for-each power
 ;@@ TODO: /reverse? how will it work though?
-map-each: func ['spec [word! block!] series [series!] code [block!] /only /eval /self /local tgt] [
+map-each: function ['spec [word! block!] series [series!] code [block!] /only /eval /self] [
 	tgt: make block! length? series
 	if any [word? spec not set-word? :spec/1] [
 		spec: compose [pos: (spec)]
@@ -259,10 +259,11 @@ map-each: func ['spec [word! block!] series [series!] code [block!] /only /eval 
 	either self [head change/part series tgt tail series][tgt]
 ]
 
-#assert [[#"a" #"b" #"c"]    = map-each c "abc" [c]]
-#assert [[#"a" #"c" #"e"]    = map-each [a b] "abcde" [a]]
-#assert [[#"b" #"d" #[none]] = map-each [a b] "abcde" [b]]
-#assert [[#"b" #"d"]         = map-each [a b] "abcd" [b]]
+#assert [ [#"a" #"b" #"c"]    = map-each c     "abc"   [c] ]
+#assert [ [#"a" #"c" #"e"]    = map-each [a b] "abcde" [a] ]
+#assert [ [#"b" #"d" #[none]] = map-each [a b] "abcde" [b] ]
+#assert [ [#"b" #"d"]         = map-each [a b] "abcd"  [b] ]
+#assert [ [1 [x y] 2 [x y]]   = map-each/eval a [1 2] [[ a map-each b [x y] [b] ]] ]
 
 ; probe map-each/eval [x [integer!] y [integer! float!]] [1 2.0 3.0 4 5] [ [form x form y]]
 
