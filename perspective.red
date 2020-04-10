@@ -72,7 +72,8 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 	]
 	load-cmp-handler: func [fa ev /local dir] [
-		if dir: request-dir/dir/title rea/comparison-dir "Select a logs directory to compare to" [
+		dir: any [select config 'last-comparison-dir  %./]
+		if dir: request-dir/dir/title dir "Select a logs directory to compare to" [
 			load-comparison dir
 		]
 	]
@@ -138,8 +139,10 @@ context [												;-- hide everything in a context from accidental modificati
 				load-prv-btn: button 100 "Load previous"     :load-prv-handler
 				return
 
-				ref-label: text font-color #BA4 rate 2 on-time [maybe face/data: to-local-file rea/comparison-dir] (wsize/x - 260) font-size 12 #fill-x
-				cwd-label: text font-color #BA4 rate 2 on-time [maybe face/data: to-local-file what-dir]           (wsize/x - 260) font-size 12 #fill-x
+				ref-label: text font-color #BA4 (wsize/x - 260) font-size 12 #fill-x
+					rate 2 on-time [maybe face/data: to-local-file select config 'last-comparison-dir]
+				cwd-label: text font-color #BA4 (wsize/x - 260) font-size 12 #fill-x
+					rate 2 on-time [maybe face/data: to-local-file what-dir]
 				return
 
 				comp-btn: button 100 "Compile all" [start-compile-all] #fix-x
@@ -307,6 +310,7 @@ context [												;-- hide everything in a context from accidental modificati
 	load-test-run: function [
 		"Load results from a directory and use it to log newly run tests"
 		path [file!]
+		/extern config
 	][
 		#assert [exists? dirize path]
 		change-dir working-dir: dirize path
@@ -341,20 +345,20 @@ context [												;-- hide everything in a context from accidental modificati
 			]
 		]
 
-		config/last-working-dir: working-dir
+		config: make config [last-working-dir: working-dir]
 		save-config
 	]
 
 	load-comparison: function [
 		"Load results to compare to"
 		path [file!]
-		/extern comparison
+		/extern comparison config
 	][
 		#assert [exists? dirize path]
 		scope [
 			leaving [change-dir working-dir]
 		
-			change-dir rea/comparison-dir: clean-path dirize path
+			change-dir cmp-dir: clean-path dirize path
 			files: read %./
 
 			comparison: clear #()
@@ -371,6 +375,9 @@ context [												;-- hide everything in a context from accidental modificati
 					]
 				]
 			]
+
+			config: make config [last-comparison-dir: cmp-dir]
+			save-config
 		]
 	]
 
@@ -628,15 +635,20 @@ context [												;-- hide everything in a context from accidental modificati
 	; it can be boring to find it among the logs - a prefiltering might help but will disable the ability to use non-full results as reference
 	;; automatically compare to the previous reference run
 	;; %.reference.run file is created automatically when all tests were finished
-	cmp: runs: sort/reverse read %../			;-- newer items come first
-	foreach dir runs [
-		if all [
-			find/match dir %run-				;-- one can rename `run-` dirs but only by adding a suffix
-			exists? cmp: #composite %"../(dir).reference.run"
-		][
-			load-comparison #composite %"../(dir)"
-			break
+	load-reference: function ["Find and load last saved or last produced reference run for comparison"] [
+		cmp: runs: sort/reverse read %../			;-- newer items come first
+		unless cmp-dir: select config 'last-comparison-dir [
+			foreach dir runs [
+				if all [
+					find/match dir %run-				;-- one can rename `run-` dirs but only by adding a suffix
+					exists? cmp: #composite %"../(dir).reference.run"
+				][
+					cmp-dir: #composite %"../(dir)"
+					break
+				]
+			]
 		]
+		if cmp-dir [load-comparison cmp-dir]
 	]
 
 	save-config: function [] [
@@ -653,6 +665,8 @@ context [												;-- hide everything in a context from accidental modificati
 	;; save the log directory in the config - for crash recovery
 	set 'config make config [last-working-dir: working-dir]
 	save-config
+
+	load-reference
 
 	apply view [
 		spec: main-window
