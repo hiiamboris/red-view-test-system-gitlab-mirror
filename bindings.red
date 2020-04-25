@@ -81,13 +81,3 @@ do-using: function [
 	fun
 ]
 
-text: [
-    {[View] RADIO emits superfluous events on Windows and macOS} 
-    list: [] 
-    push list 
-    display [r: radio [append list face/data]] click pos: r ~at~ [middle left + 10] 
-    list: sync list 
-    expect [list = reduce [true]] click pos 
-    list: sync list 
-    expect [list = reduce [true]]
-]
