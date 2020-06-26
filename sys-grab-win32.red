@@ -51,6 +51,10 @@ Red [
 				graphics	[int-ptr!]
 				return:		[integer!]
 			]
+			GdipDeleteGraphics: "GdipDeleteGraphics" [
+				graphics    [integer!]
+				return:     [integer!]
+			]
 			GdipCreateBitmapFromScan0: "GdipCreateBitmapFromScan0" [
 				width		[integer!]
 				height		[integer!]
@@ -115,6 +119,8 @@ grab-screenshot*: routine [
 	BitBlt as handle! gpdc 0 0 w h scrdc x y 40CC0020h	;-- CAPTUREBLT | SRCCOPY -- former for layered windows capture!
 	GdipReleaseDC gfx gpdc
 	ReleaseDC null scrdc
+
+	GdipDeleteGraphics gfx
 
 	as red-image! stack/set-last as cell! img
 ]
