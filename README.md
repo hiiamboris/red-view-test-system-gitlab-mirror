@@ -2,6 +2,8 @@
 
 Test system for [Red language](https://www.red-lang.org/)'s [View subsystem](https://doc.red-lang.org/en/view.html). Just 'the system' from now on.
 
+[**See the improvements timeline**](timeline.md)
+
 ## Features and their status
 
 ### UI
