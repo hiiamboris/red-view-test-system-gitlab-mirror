@@ -2,6 +2,14 @@
 
 Here will posted comparisons across different builds, with reasonable intervals (a few months).
 
+Legend:
+- green = test succeeded (success level 3)
+- yellow = test succeeded but triggered warning thresholds (success level 2)
+- red = test failed (success level 1)
+- black = test crashed or hang (success level 0)
+- the number of arrows shows improvement in success level from the previous result
+- `?` indicates that some screenshots were differing and required manual overview (which for the purpose of this timeline I executed)
+
 ---
 ## December 2019 -> May 2020
 
