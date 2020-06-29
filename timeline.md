@@ -5,7 +5,7 @@ Here will posted comparisons across different builds, with reasonable intervals 
 ---
 ## December 2019 -> May 2020
 
-![](https://i.gyazo.com/5ab8091717524b01ef6a2e5398510f5e.png)
+![](https://i.gyazo.com/6332988f53e0303e79b98f4576956d71.png)
 
 ---
 ## May 2020 -> June 2020
