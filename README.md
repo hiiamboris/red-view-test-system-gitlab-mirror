@@ -54,7 +54,7 @@ A few tests in an experimental state so far.
 
 ### Nitpicky testing
 
-Partly implemented - needs a pragmatic comparison UI.
+Implemented. Improvements in comparison UI are still wanted, but since View is rather buggy, it has to wait, or the stability of the whole test system will be at stake.
 
 *Goal: when run twice on the same system - detect the slightest of changes in tests output, warn the user and present an overview for analysis*
 
@@ -63,11 +63,16 @@ Partly implemented - needs a pragmatic comparison UI.
 I decided not to do any setups. Just clone it and call `run-w32.bat`. It uses a prebuilt by me console exe to run the system.
 
 You can compile this console yourself:
-- `git clone https://github.com/hiiamboris/red/tree/view-test-system` as it contains all the necessary patches
-- from within that directory (where `red.r` is), `git clone https://gitlab.com/hiiamboris/red-view-test-system`
+- `git clone https://github.com/hiiamboris/red/tree/view-test-system` - this clones Red version that contains all the necessary patches
+- `cd view-test-system` (directory just created)
+- `git clone https://gitlab.com/hiiamboris/red-view-test-system` - this clones the test system itself
+- `cd red-view-test-system` (subdirectory just created)
+- `git clone https://gitlab.com/hiiamboris/red-mezz-warehouse common` - this clones mezz warehouse that contains some required functionality
+- `cd ..` get back to Red source tree
 - build it: `rebol --do "do/args %red.r {-r -d -o red-view-test-system\view-test-console.exe environment/console/GUI/gui-console.red}"`
+- use `run-w32.bat` in `red-view-test-system` to run the GUI, or make your own runner to run it based on this example
 
-Also, to run tests in a custom built console rather than default `red --cli`, you can point `command-to-test` in `config.red` to it (use full path in OS format). 
+By default it uses `red --cli` command for the worker. To test a custom built console, you can edit `config.red` and change `command-to-test` setting (use full path in OS format). 
 
 *Goal: add UI settings to config file, maybe more self-checks on run*
 
@@ -80,11 +85,11 @@ Requires porting guide, user's guide.
 ### Rationale
 
 - In my opinion View subsystem has long crossed the point where every minor change may bring about a set of regressions, thus became hard to maintain or refactor. It requires a tool to detect such regressions promptly and automatically.
-- There's no metric other than number of issues on Github that may compare the status of View support of each major platform (or even it's version, like W7 vs W8+). We usually do not know what will work here or there. This largely hinders portability of visual applications and requires a lot of effort and VM testing to achieve it for each particular app ('diagrammar' being a great but not the only illustration of this point).
+- There's no metric other than number of issues on Github that may compare the status of View support of each major platform (or even it's version, like W7 vs W8+). We usually do not know what will work here or there. This largely hinders portability of visual applications and requires a lot of effort and VM testing to achieve it for each particular app ('diagrammar' being a great but not the only illustration of this point: I opened ~60 new issues during table style experiments).
 
 ### Scope
 
-View test system is meant not to replace, but to be used along the test backend, which is perfect for some tasks and completely unacceptable for others.
+View test system is meant not to replace, but to be used along the [test backend](https://github.com/red/red/tree/master/modules/view/backends/test), which is perfect for some tasks and completely unacceptable for others.
 It is also not a stress testing system (like Monkey), but such system may one day be implemented on top of it.
 
 Main point for now is to be able to run View regression tests *with little to no user interaction.*
