@@ -14,6 +14,15 @@ context [
 		fa
 	]
 
+	set 'parent-of? make op! func [
+		"Checks if PA is a (probably deep) parent of FA"
+		pa [object!]
+		fa [object!]
+	][
+		while [fa: select fa 'parent] [if pa =? fa [return yes]]
+		no
+	]
+
 	set 'borders-of function [
 		"Return window borders thickness: [left x top  right x bottom]"
 		window [object!]

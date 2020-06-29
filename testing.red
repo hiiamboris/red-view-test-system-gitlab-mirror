@@ -6,16 +6,16 @@ Red [
 
 recycle/off 
 #either value? 'startup-dir [
-	do #composite %"(startup-dir)dope.red"
-	do #composite %"(startup-dir)jobs.red"
-	do #composite %"(startup-dir)input.red"
-	do #composite %"(startup-dir)visuals.red"
+	include #composite %"(startup-dir)dope.red"
+	include #composite %"(startup-dir)jobs.red"
+	include #composite %"(startup-dir)input.red"
+	include #composite %"(startup-dir)visuals.red"
 	do load #composite %"(startup-dir)config.red"
 ][
 	#include %dope.red
-	#include %jobs.red
-	#include %input.red
-	#include %visuals.red
+	include %jobs.red
+	include %input.red
+	include %visuals.red
 	do load %config.red
 ]
 
@@ -32,15 +32,18 @@ unless what-dir = working-dir [
 
 assert [what-dir = working-dir]
 
-#where's-my-error?
+; #where's-my-error?
 
 load-issues: does [clear issues: #() do #composite %"(startup-dir)issues.red"]		;@@ move this into %issues.red?
 
-reload: does [do/expand load #composite %"(startup-dir)testing.red" ()]		;-- load is required for change-dir to have effect
+reload: does [		;-- load is required for change-dir to have effect
+	attempt [clear included]
+	do/expand load #composite %"(startup-dir)testing.red" ()
+]
 
 unless value? 'main-worker [jobs/init]
 
-toolset: context [
+once toolset: context [
 
 	{
 		issue status can be:
@@ -185,7 +188,7 @@ toolset: context [
 		; /heavy  "Use heavy worker (default: main worker)"
 		; /async	"Return immediately (otherwise blocks)"
 	][
-	 	default period: [0:0:10]
+	 	default period: 0:0:10
 	 	if return [code: compose/only [print mold/all/flat do (code)]]	 ;@@ mold/all leads to unloadable #[handle! ...] - FIXED by commit
 		task: jobs/send-main code
 		output: clock [jobs/wait-for-task/max task period]
@@ -533,12 +536,12 @@ toolset: context [
 				append def/score pick [1.0 0.0] not bad?
 			]
 		]
-		default result: ['ok]
+		default result: 'ok
 		def/result: result
-		log-artifact object compose [
-			type:   'result
-			result: quote (result)
-			score:  def/score
+		log-artifact construct compose [
+			type:   result
+			result: (result)
+			score:  (def/score)
 			key:    (key)
 		]
 		save-artifacts key		;-- save for later comparison

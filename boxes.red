@@ -115,7 +115,7 @@ boxes-ctx: context [
 
 		;; find bottom edge that fits best
 		best-prox: 1 + max-proximity
-		foreach [prob y x1 x2] at h-edges best-hpos + 4 [
+		foreach [prob y x1 x2] skip best-hpos 4 [
 			prox: absolute y - xy2/y
 			unless prox <= max-proximity [continue]					;-- edge should go near the box margin
 			set [x1' x2'] extend x1 x2 width
@@ -142,7 +142,7 @@ boxes-ctx: context [
 
 		;; find right edge that fits best
 		best-prox: 1 + max-proximity
-		foreach [prob x y1 y2] at v-edges best-vpos + 4 [
+		foreach [prob x y1 y2] skip best-vpos 4 [
 			prox: absolute x - xy2/x
 			unless prox <= max-proximity [continue]					;-- edge should go near the box margin
 			set [y1' y2'] extend y1 y2 height

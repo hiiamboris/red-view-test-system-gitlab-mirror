@@ -5,17 +5,22 @@ Red [
 ]
 
 ;@@ TODO: config-file with last known size/offset; reduced if maximized
+;@@ TODO: unify comparison and exploration: should decide on the layout automatically
+;@@ TODO: make includes never reinclude anything, but be able to do that with `reload` (reload %file ?)
 
-#include %assert.red				;@@ stupid `do` junk!
-#include %composite.red				;@@ stupid `do` junk!
+do %include.red
+#include %common/assert.red					;@@ stupid `do` junk! - won't load macros
+#include %common/composite.red				;@@ stupid `do` junk! - won't load macros
+; include %table.red						;@@ would be better to use table, but it triggers too many hidden bugs...
 
-do/expand load %testing.red
-assert [what-dir = working-dir]		;@@ pathetic #include junk!
+do/expand load %testing.red				;@@ `do/expand load` is required to stay in the directory changed by %testing
+assert [what-dir = working-dir]
 
 
-context [												;-- hide everything in a context from accidental modification
+perspective-ctx: context [												;-- hide everything in a context from accidental modification
 
 	rea: make deep-reactor! [
+		new-results?: yes								;-- becomes true after each test; so that we can save the main window screenshot
 		auto-testing?: no
 		scheduled-tests: []
 		comparison-dir: what-dir
@@ -23,7 +28,7 @@ context [												;-- hide everything in a context from accidental modificati
 		score: is [sum extract next scores-map 2]
 	]
 
-	adapt-tile-size: function ["Reposition tiles to fit the window"][
+	adapt-tile-size: function ["Reposition tiles to fit the window"] [
 		ips: do with issues-panel [
 			size: main-window/size - offset - (offset/x * 1x1)
 		]
@@ -40,7 +45,7 @@ context [												;-- hide everything in a context from accidental modificati
 			leaving [maybe system/view/auto-sync?: yes]
 			pane: issues-panel/pane
 			xyloop xy fits [
-				while [all [base: pane/1  base/type <> 'base]] [pane: next pane]		;@@ TODO: rewrite this using `lookup`? ;)
+				while [all [base: pane/1  base/type <> 'base]] [pane: next pane]		;@@ TODO: rewrite this using `locate`? ;)
 				unless base [break]
 				maybe base/size: size - 1x1						;-- 1x1 for spacing
 				maybe base/offset: xy - 1x1 * size
@@ -57,7 +62,7 @@ context [												;-- hide everything in a context from accidental modificati
 	]
 
 	click-test-all-handler: func [fa ev] [
-		hold-horses [										;-- don't let it reset auto-testing before we schedule some tests
+		do-atomic [										;-- don't let it reset auto-testing before we schedule some tests
 			if all [
 				rea/auto-testing?: not rea/auto-testing?	;-- tests are about to continue?
 				empty? rea/scheduled-tests					;-- starting, not resuming?
@@ -82,8 +87,8 @@ context [												;-- hide everything in a context from accidental modificati
 			load-test-run dir
 		]
 	]
-	load-prv-handler: func [fa ev /local dir] [load-test-run last-run-dir]
-	over-tile-handler: func [fa ev /local issue] [
+	load-prv-handler: func [fa ev] [load-test-run last-run-dir]
+	over-tile-handler: function [fa ev] [
 		either ev/away? [
 			maybe tooltip/text: ""
 		][
@@ -92,7 +97,9 @@ context [												;-- hide everything in a context from accidental modificati
 				"^/double-click to " pick ["compile" "run"] issue/status = 'not-compiled
 				"^/right-click to inspect"
 			]
-			maybe tooltip/offset: face-to-window ev/offset fa
+			maybe tooltip/offset: min
+				xy: 0x8 + face-to-window ev/offset fa
+				as-pair main-window/size/x - tooltip/size/x xy/y
 		]
 	]
 	test-btn-reaction: [
@@ -139,9 +146,11 @@ context [												;-- hide everything in a context from accidental modificati
 				load-prv-btn: button 100 "Load previous"     :load-prv-handler
 				return
 
-				ref-label: text font-color #BA4 (wsize/x - 260) font-size 12 #fill-x
+				;@@ TODO: these are not very descriptive; need to add worker build data & commit for both reference and result
+				;@@ align: left is required to disable wrapping - see #4557
+				ref-label: text left font-color #BA4 (wsize/x - 260) font-size 10 #fill-x
 					rate 2 on-time [maybe face/data: to-local-file select config 'last-comparison-dir]
-				cwd-label: text font-color #BA4 (wsize/x - 260) font-size 12 #fill-x
+				cwd-label: text left font-color #BA4 (wsize/x - 260) font-size 10 #fill-x
 					rate 2 on-time [maybe face/data: to-local-file what-dir]
 				return
 
@@ -164,7 +173,7 @@ context [												;-- hide everything in a context from accidental modificati
 			]
 		]
 		keep [
-			at 0x0 tooltip: box 1x1 left font-color #057 font-size 10 react tooltip-reaction
+			at 0x0 tooltip: box 1x1 left 250.250.250.130 #057 font-size 10 react tooltip-reaction
 		]
 	]
 
@@ -173,6 +182,7 @@ context [												;-- hide everything in a context from accidental modificati
 			title: key
 			no-review: not show-every/data
 		]
+		rea/new-results?: yes			;@@ BUG: this doesn't track the manual `test-issue` invocation
 	]
 
 	proceed-with: function [face [object!]] [
@@ -196,7 +206,7 @@ context [												;-- hide everything in a context from accidental modificati
 	j: none
 	arrow-shapes: map-each/eval imp [-3 -2 -1 0 1 2 3] [[
 		imp
-		map-each i gen-range abs imp [
+		map-each i abs imp [
 			compose/only [
 				translate (i - 1 * 0x10)
 				(pick [
@@ -286,7 +296,10 @@ context [												;-- hide everything in a context from accidental modificati
 		show main-window
 
 		;; mark this run as reference if all tests were finished
-		if n-done = length? issues [write  %.reference.run ""]
+		if all [
+			n-done = length? issues
+			rea/new-results?				;-- don't rewrite the png all the time, only after new tests
+		] [save/as %.reference.run.png to image! main-window 'png]
 	]
 
 	run-some-test: function ["Run one of the pending tests"] [
@@ -298,8 +311,8 @@ context [												;-- hide everything in a context from accidental modificati
 		for-each [pos: test] rea/scheduled-tests [
 											;@@ TODO: add manual tests also here?
 			if find [ready tested] st: issues/:test/status [
-				remove at rea/scheduled-tests pos
 				if 'ready = st [run-test test]		;-- skip those already tested (manually in console or with dbl-click)
+				remove pos
 				clear lock
 				exit
 			]
@@ -381,26 +394,6 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 	]
 
-
-	prep-for-comparison: function [
-		"Expands any saved images in object O into a new object (returned)"
-		o [object! none!]
-	] compose [
-		cache: (make hash! [])
-		if o [
-			if r: select/same cache o [return r]
-			r: copy o
-			foreach w words-of r [
-				if paren?  :r/:w [r/:w: do r/:w]
-				if object? :r/:w [attempt [r/:w: prep-for-comparison r/:w]]		;-- catch stack overflows if recurses
-			]
-			if 1000 < length? cache [clear cache]		;-- reset in case it grows too much
-			repend cache [o r]
-			r
-		]
-	]
-
-	;; sets will be modified!!
 	compare-artifact-sets: function [set1 [block!] set2 [block!] /local a] [
 		;; TODO: this would really benefit from levenshtein's; for now dumb & linear
 		r: copy []
@@ -408,13 +401,13 @@ context [												;-- hide everything in a context from accidental modificati
 		remove-each a set2 cond
 		key: attempt [select any [pick set1 1 pick set2 1] 'key]
 		repeat i max length? set1 length? set2 [		;@@ make this map-each over zip of sets?
-			if art1: prep-for-comparison pick set1 i [set1/:i: art1]
-			if art2: prep-for-comparison pick set2 i [set2/:i: art2]
-			append/only r cmp: compare-objects art1 art2
+			; if art1: prep-for-comparison pick set1 i [set1/:i: art1]
+			; if art2: prep-for-comparison pick set2 i [set2/:i: art2]
+			append/only r cmp: compare-objects set1/:i set2/:i
 			all [			;-- enforce equality of all keys - anything that's different should be highlighted
-				any [key <> select art1 'key  key <> select art2 'key]
+				any [key <> select set1/:i 'key  key <> select set2/:i 'key]
 				not find cmp 'key
-				append cmp key
+				append cmp 'key
 			]
 		]
 		r
@@ -425,13 +418,22 @@ context [												;-- hide everything in a context from accidental modificati
 		o1 [object! none!] o2 [object! none!]
 	][
 		r: copy []
-		unless all [o1 o2] [return r]
+		unless o1 [return words-of o2]
+		unless o2 [return words-of o1]
 		ws: words-of o1
 		art?: all [find ws 'key  find ws 'type]		;-- objects are artifacts?
 		if ws <> ws2: words-of o2 [append r difference ws ws2]
 		foreach w intersect ws ws2 [
 			if all [art?  w = 'file] [continue]			;-- ignore filenames - they're always different
-			if (select o1 w) <> (select o2 w) [append r w]
+														;@@ TODO: option to not evaluate (select) entries
+			v1: select o1 w   v2: select o2 w			;-- `select` for objects not having part of the result (new/broken tests, unfinished runs...)
+			if v1 <> v2 [
+				if all [
+					object? :v1  object? :v2		;@@ special case for objects with functions (that may contain different paths!) - workaround for #4540
+					empty? compare-objects v1 v2
+				][continue]
+				append r w
+			]
 		]
 		r
 	]
@@ -471,6 +473,7 @@ context [												;-- hide everything in a context from accidental modificati
 		arts: copy issue/artifacts
 
 		;; this is done by `compare-artifact-sets` but with a lot more memory pressure, cuz it unpacks images
+		;@@ TODO: refactor this; it's not unpacking anymore
 		remove-each a arts [find [context build] a/type]		;-- ignore `context` which we don't save at all; and build which always differs
 		either (length? arts) <> length? cmp/artifacts [
 			res: '?
@@ -503,7 +506,7 @@ context [												;-- hide everything in a context from accidental modificati
 		prep: func [v [any-type!]] [if paren? :v [v: do v] :v]		;-- support for `(load/as .. 'png)
 		;@@ TODO: add other issue parameters (field) into the header! and call explore-* on those!
 		arts1: copy issues/:key/artifacts
-		arts2: copy comparison/:key/artifacts
+		arts2: copy any [attempt [comparison/:key/artifacts] []]
 		build1: get-build-from arts1
 		build2: get-build-from arts2
 		diff: compare-artifact-sets arts1 arts2
@@ -515,8 +518,8 @@ context [												;-- hide everything in a context from accidental modificati
 				text 300 #405 #FF4 #scale-x center (build1)
 				text 300 #405 #FF4 #scale-x center (build2) return
 			]
-			keep map-each [i: ws] diff [
-				clr: pick [#5F4 #F45] empty? ws
+			keep map-each [/i words] diff [
+				clr: pick [#5F4 #F45] empty? words
 				code: compose/only [explore+compare (v1: arts1/:i) (v2: arts2/:i)]
 				compose/deep/only [
 					;; should be left-aligned to show the beginning of long strings, e.g. `make object! ..`
@@ -559,6 +562,7 @@ context [												;-- hide everything in a context from accidental modificati
 						]
 					]
 				]
+				;@@ TODO: should be able to "compare" object with none, or simply explore the object!!!
 				;@@ TODO: explore blocks (lists) ability & somehow unite it with visual-comparison
 			]
 		]		;-- do not descend into scalars or if different types (then difference is obvious)
@@ -583,8 +587,10 @@ context [												;-- hide everything in a context from accidental modificati
 			ws: union words-of o1 words-of o2
 			keep map-each w ws [
 				clr: pick [#5F4 #F45] none? find diff w
-				v1: select o1 w
-				v2: select o2 w
+				v1: attempt [o1/:w]		;@@ TODO: option to not evaluate (select) entries
+				v2: attempt [o2/:w]
+				; v1: select o1 w
+				; v2: select o2 w
 				code: compose/only [explore+compare/name/owners quote (:v1) quote (:v2) quote (w) (o1) (o2)]
 				compose/deep/only [
 					;; should be left-aligned to show the beginning of long strings, e.g. `make object! ..`
@@ -611,7 +617,7 @@ context [												;-- hide everything in a context from accidental modificati
 		]
 
 		diff: make image! i1'/size
-		xyloop xy diff/size [if i1'/:xy = i2/:xy [diff/:xy: black]]	;@@ TODO: do this in R/S
+		xyloop xy diff/size [if i1'/:xy <> i2/:xy [diff/:xy: maroon]]	;@@ TODO: do this in R/S
 		i1':   scale-to-fit i1   third
 		i2':   scale-to-fit i2   third
 		diff': scale-to-fit diff third
@@ -641,7 +647,10 @@ context [												;-- hide everything in a context from accidental modificati
 			foreach dir runs [
 				if all [
 					find/match dir %run-				;-- one can rename `run-` dirs but only by adding a suffix
-					exists? cmp: #composite %"../(dir).reference.run"
+					any [
+						exists? cmp: #composite %"../(dir).reference.run"
+						exists? cmp: #composite %"../(dir).reference.run.png"
+					]
 				][
 					cmp-dir: #composite %"../(dir)"
 					break
@@ -685,4 +694,6 @@ context [												;-- hide everything in a context from accidental modificati
 		no-wait: system/console/gui?
 	]
 
-];; end of all-encompassing context
+];; perspective-ctx: context [
+
+import perspective-ctx

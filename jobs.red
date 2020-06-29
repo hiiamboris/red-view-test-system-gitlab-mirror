@@ -146,7 +146,7 @@ jobs: make any [value-of jobs  object!] [
 							loop 5 [do-events/no-wait]					;-- process queued events
 						]
 						bin: read/binary/seek (mold stdin) ofs
-						if pos: find/tail bin %"^^/" [
+						if pos: find/tail bin #"^^/" [
 							ofs: ofs + offset? bin pos
 							str: to string! copy/part bin pos
 							print ["=== BUSY:" str]
