@@ -4,6 +4,10 @@ Red [
 	license: 'BSD-3
 ]
 
+
+; #do [print "PREPROCESSING ISSUES"]
+; print "EVALUATING ISSUES"
+
 ; #where's-my-error?
 
 ;@@ TODO: `close` should do platform-specific window closing action
@@ -150,7 +154,7 @@ issue/interactive #4221 [		;-- /interactive to have DISPLAY
 
 	;; logic: make a semi-transparent window, compare built-in and Red screenshots
 	display [backdrop white b: box #FF00FF50]
-	s1: to-image system/view/screens/1
+	s1: discard-taskbar to-image system/view/screens/1		;-- discard taskbar for auto comparison to not highlight it
 	log-image s1
 	s2: screenshot
 	s1: capture-face/whole/with b s1		;-- exclude irrelevant areas
@@ -255,10 +259,8 @@ issue/compiled/interactive #4190 [
 	wndw: find-window-on scrn
 	expect [wndw]
 	expect [pnl: box [500x500 within scrn/wndw]]
-	; pnl/offset: pnl/offset + wndw/offset		;@@ TODO: complex paths like scrn/wndw/pnl ?
 	expect [btn: box [within scrn/pnl 80x20]]
 	click btn
-	; click btn/size / 2 + btn/offset + pnl/offset	;@@ TODO: let boxes carry an absolute offset too!
 	close wndw
 	; wait 1		;-- let it flush the output
 	expect [not find task/output "Error"]	;-- may crash upon exiting
@@ -291,7 +293,12 @@ issue #4171 [
 	output: offload/silent [
 		view [image %non-existing-image.png rate 1 on-time [unview]]
 	]
-	expect [find output "Access Error: cannot open: %non-existing-image.png"]
+	expect [
+		all [
+			find output "Access Error"
+			find output "non-existing-image"
+		]
+	]
 ]
 
 ;; TODO: #4163 testable at all?
@@ -883,6 +890,8 @@ issue/layout #3813 [
 ]
 
 issue #3812 [
+	"[View] `size-text/with` ignores `/with` when used on rich-text"
+
 	offload [
 		r: rtd-layout ["ab^/cd"]
 		sz1: size-text r
@@ -1433,8 +1442,8 @@ issue #3661 [
 	"Screen grabbing isn't DPI aware yet"
 	
 	sz1: offload/return [i: to image! system/view/screens/1  i/size]
-	sz2: units-to-pixels system/view/screens/1
-	expect [sz1 - i2/size .<. 5x5]		;-- allow some rounding error
+	sz2: units-to-pixels system/view/screens/1/size
+	expect [sz1 - sz2 .<. 5x5]		;-- allow some rounding error
 ]
 
 issue/interactive #3656 [			;-- planned to be fixed in 0.9.x
@@ -1803,7 +1812,7 @@ issue/interactive #3400 [
 		pin-dlg
 	]
 	click btn: sync btn
-	s1: shoot/real btn		;-- this should have a single asterisk
+	s1: shoot/real pin-show		;-- this should have a single asterisk
 	close wnd: sync wnd
 
 	offload [
@@ -1811,7 +1820,7 @@ issue/interactive #3400 [
 		pin-dlg
 	]
 	click btn: sync btn
-	s2: shoot/real btn		;-- this should have two asterisks
+	s2: shoot/real pin-show		;-- this should have two asterisks
 	close wnd: sync wnd
 	pin: sync pin
 
@@ -2124,7 +2133,7 @@ issue/interactive #3167 [
 issue/layout #3165 [
 	"Cannot drag face when display is scaled (Win10)"	;-- and W7
 
-	;; logic: display boxes of different sizes, see if any are not transparent
+	;; logic: display boxes of different sizes, see if any are not transparent (because transparent parts prevent dragging)
 	shots: []
 	repeat x 10 [
 		size: 151 + x * 1x1
