@@ -1,6 +1,7 @@
 # Improvements timeline
 
 Here will posted comparisons across different builds, with reasonable intervals (a few months).
+TODO: Ideally there should be a table - a column for each platform (W7, W10, Mac, GTK).
 
 Legend:
 - green = test succeeded (success level 3)
