@@ -46,12 +46,17 @@ once dope-ctx: context [
 	;; declarative chainable pair comparison: 1x1 .<. 2x2 .<. 3x3 => 3x3 (truthy) - because `within?` messes my head up
 	.<.:  make op! func [a [pair! none!] b [pair! none!]] [all [a b  a/1 <  b/1  a/2 <  b/2  b]]
 	.<=.: make op! func [a [pair! none!] b [pair! none!]] [all [a b  a/1 <= b/1  a/2 <= b/2  b]]
+	.=.:  make op! func [a b] [all [a = b  b]]
+	#assert [not 1 .=. 2 .=. 3]
 
 	;; fuzzy number comparison
 	~=: make op! almost-equal?: func [a [number!] b [number!]] [
 		eps: 1% * to float! max a b
 		eps >= to float! abs a - b
 	]
+
+
+	when: make op! func [value test] [either :test [:value][[]]]
 
 
 	hamming: func [
@@ -315,7 +320,7 @@ once dope-ctx: context [
 			scope [
 				current-key/push id
 				leaving [current-key/back]
-				trace-it bind body self
+				trace-it bind bind-only body 'leaving self		;-- `leaving` should be available to issues, for more reliable cleanup
 			]
 			none					;-- no return value
 		]
@@ -331,7 +336,7 @@ once dope-ctx: context [
 			scope [
 				current-key/push id
 				leaving [current-key/back]
-				catch/name [trace-it/with bind code self :inspect] 'stop
+				catch/name [trace-it/with bind bind-only code 'leaving self :inspect] 'stop
 			]
 			code		;-- empty? can be used to check if it's done or not
 		]
