@@ -32,13 +32,12 @@ context [
 		get-window-borders* window/state/1
 	]
 
-	set 'window-size-of func [
-		"Get precise size (in pixels) of a window face"
-		window [object!]
+	set 'size-of func [
+		"Get precise size (in pixels) of a FACE (window or child)"
+		face [object!]
 	][
-		#assert [any [handle? window/state/1 integer? window/state/1]]
-		#assert ['window = window/type]
-		get-window-size* window/state/1
+		#assert [any [handle? face/state/1 integer? face/state/1]]
+		get-window-size* face/state/1
 	]
 
 	set 'client-offset-of func [
