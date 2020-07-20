@@ -34,11 +34,16 @@ assert [what-dir = working-dir]
 
 ; #where's-my-error?
 
-load-issues: does [clear issues: #() do #composite %"(startup-dir)issues.red"]		;@@ move this into %issues.red?
+li: load-issues: does [					;@@ move this into %issues.red?
+	clear issues: #()
+	include/force #composite %"(startup-dir)issues.red"
+	()
+]
 
 reload: does [		;-- load is required for change-dir to have effect
 	attempt [clear included]
-	do/expand load #composite %"(startup-dir)testing.red" ()
+	do/expand load #composite %"(startup-dir)testing.red"
+	()
 ]
 
 unless value? 'main-worker [jobs/init]
@@ -168,12 +173,34 @@ once toolset: context [
 		unless jobs/alive? main-worker [
 			;@@ TODO: subtract something from the score on crash??
 			output: jobs/peek-worker-output main-worker		;-- read it's last wish
-			panic #composite "main-worker has CRASHED! during execution of:^/(mold main-worker/last-code)^/with message:^/(output)"
+			panic #composite "main-worker CRASHED! during execution of:^/(mold main-worker/last-code)^/with message:^/(output)"
 			if find output "Invalid encapsulated data" [
 				print "TIP: create a batch file or specify a full path in the config!^/"
 			]
 			jobs/restart-worker main-worker
 			output
+		]
+	]
+
+	restart-main-worker: function [
+		"Restart the main worker"
+		/timeout dt [time! integer!] "Specify a countdown (default: instantly)"
+	][
+		either not timeout [
+			jobs/restart-worker main-worker
+		][
+			t0: now/precise + to time! dt
+			view [
+				text "In 5 seconds worker will be restarted"
+				rate 1 on-time [face/text: face/text]		;-- trigger the reaction
+				react [										;-- which should also kick in initially
+					left: difference t0 now/precise
+					parse face/text [thru #" " change to #" " (round/to left/second 1)]
+					if left <= 0 [unview jobs/restart-worker main-worker]
+				] return
+				pad 100x0 button focus "Let it live!" [unview]
+			]
+			()
 		]
 	]
 
@@ -203,10 +230,13 @@ once toolset: context [
 			]
 		][
 			either jobs/alive? main-worker [
-				ERROR "=== Worker is BUSY! after executing:^/(mold-part code 100)^/==="		;@@ TODO: kill it or not?
+				print msg: #composite "=== Worker is BUSY! after executing:^/(mold-part code 100)^/==="
+				restart-main-worker/timeout 3
+				ERROR "Worker is BUSY!"				;-- regardless if worker's restart was allowed or not, fail the test with the error
 			][
 				crashed?							;-- crashed! report and restart
-				system/words/return ()				;-- make the tests (if any) fail
+				; system/words/return ()				;-- make the tests (if any) fail
+				ERROR "Worker CRASHED!"				;-- make the tests (if any) fail
 			]
 		]
 		either return [							;-- load the output?
@@ -266,7 +296,10 @@ once toolset: context [
 			options: (with)  opts: (opts)
 			flags:   (flags) flgs: (flgs)
 		]
-		offload compose [top-window: (view-path)]		;-- the main window
+		offload compose/deep [
+			unset [(map-each w set-words [to word! w])]		;-- reset any previously used words, so we don't mistake them for new faces (e.g. a1,b1 - present in the interpreter)
+			top-window: (view-path)							;-- the main window
+		]
 		foreach sw set-words [set/any sw pull (sw)]		;@@ TODO: process ALL queued events before pulling?
 		foreach sw set-words [							;-- also update window objects for use in capture-face
 			all [
@@ -287,16 +320,23 @@ once toolset: context [
 	shoot: function [
 		"Capture the LAYOUT in a main-worker thread using to-image; return the image"
 		'layout [block! word!] "Layout block or name of a face known to the worker"
-		/real "Capture real appearance (may be overlapped!)"
+		/real  "Capture real appearance (may be overlapped!)"
 		/whole "Include non-client area if layout is a window"
+		/with opts "Specify window options"
 		/tight
+		/async "TODO (only works for single faces)"
 		/local top-window
 	][
-		#assert ['compose <> layout]		;-- a likely shoot compose [..] error - use shoot (compose [..])
+		#assert ['compose <> layout]		;-- a likely `shoot compose [..]` error - use `shoot (compose [..])`
 		unless word? layout [
 			close?: yes
 			; top-window: display layout
-			top-window: either tight [display/tight layout][display layout]
+			top-window: apply display compose/only [
+				layout: (layout)
+				tight:  (tight)
+				with:   (with)
+				opts:   (opts)
+			]
 			layout: 'top-window
 		]
 		settle-down 1 sec
@@ -308,7 +348,10 @@ once toolset: context [
 				to-image (either 'window = face/type [layout]['top-window])		;-- to-image doesn't work on bare faces, so shoot the whole window
 			]
 		]
-		layout: pull (layout)		;-- sync it, as we require it right now and it can be unset or filled with other data locally
+		layout: either async [
+			get/any layout				;-- can't sync in async mode, have to rely on it's info to be up to date
+		][	pull (layout)				;-- sync it, as we require it right now and it can be unset or filled with other data locally
+		]
 		#assert [object? :layout]
 		#assert [quacks-like-face? :layout]
 		img: apply capture-face compose [
@@ -469,9 +512,10 @@ once toolset: context [
 	move-pointer: function [
 		"Simulate a mouse-move event"
 		offset [pair!] "Screen coordinate"		;-- use ~at~ to target faces/boxes
+		/async
 	][
 		simulate-input-raw reduce [offset]
-		offload body-of :do-queued-events	;-- let worker process the input (else wheel-up + wheel-down may produce no event at all)
+		unless async [offload body-of :do-queued-events]	;-- let worker process the input (else wheel-up + wheel-down may produce no event at all)
 	]
 
 	;@@ TODO: make issue set-words local; and also synced words local
@@ -490,8 +534,9 @@ once toolset: context [
 		unless def: issues/:key [
 			ERROR "Unable to find definition for issue (key)"
 		]
-		#assert [find [ready tested] def/status]
+		if def/flags/compiled [is-compiled? key]			;-- updates compilation status! to `ready` even if it failed!
 		#assert [not all [def/flags/compiled find [not-compiled compiling] def/status] "Issue has not been compiled!"]
+		#assert [find [ready tested] def/status]
 
 		clear def/score
 		clear def/artifacts			;-- forget artifacts otherwise comparison will show dupes
@@ -508,7 +553,8 @@ once toolset: context [
 		]
 
 		if def/flags/interactive [bgnd: display-background do-queued-events]
-		sw-len: offload/return [length? words-of system/words]
+		; sw-len: offload/return [length? words-of system/words] this is not working as it counts unset words too
+		sw-len: offload/return [marker: none  index? find words-of system/words 'marker]
 		eval-results-group/key code key
 
 		close-windows
@@ -516,9 +562,9 @@ once toolset: context [
 		finish-exes key
 		offload compose [					;-- unset all used words (cleanup)
 			unset skip words-of system/words (sw-len)
+			clear-reactions
 		]
 		recycle											;-- forget screenshots
-		;@@ TODO: maybe call `clear-reactions` too?
 
 		;; update the result
 		def/status: 'tested
@@ -638,10 +684,19 @@ once toolset: context [
 	][
 		task: compile-tasks/:key
 		; assert [not none? task]
-		any [
-			; all [task task/finished?]
-			exists? #composite %"(key)-code.exe"	;-- allow user to provide the exe ;@@ TODO: make it portable
+		if task [
+			jobs/read-task-report task/worker
+			if all [								;-- check for compiler errors
+				task/finished?
+				find task/output "***"
+			][
+				task/crashed?: yes
+			]
 		]
+		if any [
+			exists? #composite %"(key)-code.exe"		;-- allow user to provide the exe ;@@ TODO: make it portable
+			all [task task/finished?]					;-- pass also failed compilations for `compile` to raise an error
+		] [issues/:key/status: 'ready]
 	]
 
 	; OBSOLETE - does not catch compile errors
@@ -685,7 +740,16 @@ once toolset: context [
 		;; but since we may have moved into another results directory, we need full pathnames
 		src-file: #composite %"(what-dir)(key)-code.red"	
 		exe-file: #composite %"(what-dir)(key)-code.exe"		;@@ TODO: make it portable
-		if exists? exe-file [return exe-file]		;-- return the exe name if it exists
+		done?: is-compiled? key					;-- this updates task status (if any)
+		all [
+			task: compile-tasks/:key			;-- was compiling (not just existing exe)
+			task/crashed?
+			ERROR {Compilation of (src-file) failed with: (find task/output "***")}
+		]
+		if done? [								;-- return the exe name if it exists
+			#assert [exists? exe-file]
+			return exe-file
+		]
 
 		write src-file code
 		cmd: #composite {red(flags) -o "(to-local-file exe-file)" "(to-local-file src-file)"}

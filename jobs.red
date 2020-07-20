@@ -93,6 +93,7 @@ jobs: make any [value-of jobs  object!] [
 			#assert [wr/last-assigned-task-id >= id]
 			wr/last-completed-task-id >= id
 		]
+		crashed?: no						;-- true when compiler returns an error
 	]
 
 
@@ -106,12 +107,16 @@ jobs: make any [value-of jobs  object!] [
 	restart-worker: function [
 		"Restart the previously created worker"
 		worker [object!]
+		; /kill "Do not wait - kill immediately (when it's known that it hung)"
 	][
 		#assert [find/same workers worker]
-		;@@ TODO: kill if deadlocked?
 		if worker/pid [		;; close it first
-			stop-worker worker		;@@ TODO: error handling
+			; either kill [
+			; 	kill-worker worker
+			; ][
+			stop-worker worker
 			if worker/handle [close-process-handle worker/handle]
+			; ]
 		]
 		#assert [none? worker/pid]
 		start-worker/replace worker
@@ -186,15 +191,17 @@ jobs: make any [value-of jobs  object!] [
 			; kill-job worker/handle
 			; kill-process worker/handle
 			kill-process-tree worker/handle
+			close-process-handle worker/handle
 			worker/pid: worker/handle: none
 		]
 	]
 
 	stack-friendly
-	stop-worker: function [worker [object!]] [  ; when it hung (otherwise `quit` should be commanded)
+	stop-worker: function [worker [object!]] [
 		assert [worker/pid]
 		unless alive? worker [				;-- terminated already?
 			worker/pid: worker/handle: none
+			if worker/handle [close-process-handle worker/handle]
 			return yes
 		]
 
@@ -203,12 +210,14 @@ jobs: make any [value-of jobs  object!] [
 		loop 50 [			;-- wait half a sec max (else kill)
 			wait 1e-2
 			if find peek-worker-output worker "quit" [
+				close-process-handle worker/handle
 				worker/pid: worker/handle: none
 				return yes
 			]
 		]
-		;@@ remove it from the `workers` list?
-		no
+		;; persuasion didn't do no good, use force
+		kill-worker worker
+		yes
 	]
 
 	stack-friendly
