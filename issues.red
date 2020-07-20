@@ -13,11 +13,865 @@ Red [
 ;@@ TODO: `close` should do platform-specific window closing action
 
 ;; issue /types define what capabilities are given to the code: can it compile? can it interact?
-;; point is not just clear definition, but that /compile & /layout can be parallelized but should not use screen-shots or actions
+;; point is not just clearer definition, but that /compile & /layout can be parallelized but should not use screen-shots or actions
 
 ;; TIP: issues title is mostly for informational purpose:
 ;;   first, when debugging an issue - it makes clear what we're looking for
 ;;   second, when an issue fails this info can be displayed to provide the person running tests with a context for failure
+;;   third, it helps to review tests in the Perspective GUI by telling what results one should expect and how to tell if they failed
+
+
+
+issue/interactive #4564 [
+	"[CRASH, View] in drop-down & drop-list when clicking outside the face"
+	should not crash
+
+	;; logic: click on an item that sticks out of the main window when it's above background (which belongs to another Red process)
+	variant 1 [
+		display [list: drop-list data ["1" "2" "3" "4" "5" "6" "7"]]	;-- provide enough lines so we don't click outside list itself by accident
+	]
+	variant 2 [
+		display [list: drop-down data ["1" "2" "3" "4" "5" "6" "7"]]	;-- same
+	]
+	click list ~at~ [right - 10]		;-- expand the list
+	wait 1
+	click/async list ~at~ 50x60			;-- choose an item
+	offload []
+]
+
+;@@ #4465 on auto-sync null window handle - will it be fixed?
+
+issue/compiled #4463 [
+	"[Compiler] Internal error when overriding face's facet with an object"
+
+	exe: compile/devmode [
+		Red [needs: 'view]
+		context [
+			lay: make-face 'window
+			lay/data: object [smth: does []]
+		]
+		print "OK"
+	]
+	task: run/wait exe 3
+	expect [task/output = "OK"]
+]
+
+issue/interactive #4461 [				;-- /interactive for it's crashing
+	"[CRASH] When system object is assigned to any facet of a face"
+	should not crash
+
+	offload variant 1 [[layout [base data system]]]
+	offload variant 2 [[layout [base data system/words]]]
+]
+
+;@@ #4458 on `with` in VID being unset - will it be fixed? and how?
+
+issue/interactive #4457 [								;-- /interactive as it can crash
+	"face/selected too big will close the window"
+	should not crash
+
+	display [field "a" with [selected: 1x1000000]]
+]
+
+issue/interactive #4454 [
+	"[View] Oddities of event processing during initialization (only?)"
+
+	variant 1 [
+		;; logic: displays 6 equal faces created using different means - should be equal at screenshots
+		offload [
+			liist: []			;-- `init` binds `list` to `layout`! need a unique name
+			extend svvs: system/view/VID/styles [
+				cell: [
+					template: [type: 'panel color: gold]
+					init: [react/link func [base cell] [repend liist [cell/extra base/size: cell/size]] [face/pane/1 face]]
+				]
+				column1: [template: [type: 'panel]  init: [c1c/size/x: 180]]
+				column2: [template: [type: 'panel actors: [on-create:  func [_][c2c/size/x: 180]]]]
+				column3: [template: [type: 'panel actors: [on-created: func [_][c3c/size/x: 180]]]]
+				column4: [template: [type: 'panel]  init: [c4c/size: as-pair 180 c4c/size/y]]
+				column5: [template: [type: 'panel actors: [on-create:  func [_][c5c/size: as-pair 180 c5c/size/y]]]]
+				column6: [template: [type: 'panel actors: [on-created: func [_][c6c/size: as-pair 180 c6c/size/y]]]]
+			]
+		]
+		leaving [				;-- cleanup
+			offload [
+				remove/key svvs 'cell
+				remove/key svvs 'column1
+				remove/key svvs 'column2
+				remove/key svvs 'column3
+				remove/key svvs 'column4
+				remove/key svvs 'column5
+				remove/key svvs 'column6
+			]
+		]
+
+		s1: shoot [c1: column1 purple [c1c: cell 40x40 [base teal] extra 1] 200x100]
+		s2: shoot [c2: column2 purple [c2c: cell 40x40 [base teal] extra 2] 200x100]
+		s3: shoot [c3: column3 purple [c3c: cell 40x40 [base teal] extra 3] 200x100]
+		s4: shoot [c4: column4 purple [c4c: cell 40x40 [base teal] extra 4] 200x100]
+		s5: shoot [c5: column5 purple [c5c: cell 40x40 [base teal] extra 5] 200x100]
+		s6: shoot [c6: column6 purple [c6c: cell 40x40 [base teal] extra 6] 200x100]
+
+		liist: sync liist									;-- not tested here, just informational
+		; expect [liist = [...]]
+		expect [s1 .=. s2 .=. s3 .=. s4 .=. s5 .=. s6]		;-- all should be equal
+		expect [box [170x30 at s6 30x30 > 95% all teal]]	;-- and all should be equally valid
+	];; variant 1
+
+	variant 2 [
+		;; logic: reaction should be triggered when s/size changes - just check if it is
+		offload [
+			extend svvs: system/view/VID/styles [
+			    yourbase: [
+			        template: [type: 'base size: 100x100]
+			        init: [make-face 'base]     ;) remove this an it'll work!
+			    ]
+			]
+		]
+		leaving [offload [remove/key svvs 'yourbase]]
+
+		display [
+			do [list: []]
+		    s: yourbase blue 400x300 react [append list s/size]
+		    return btn: button "CLICK ME" [s/size: s/size - 20]
+		]
+		click btn
+		click/right btn 		;-- avoids double-clicking
+		click btn
+		list: sync list
+		expect [list = [400x300 380x280 360x260]]
+	]
+]
+
+;; #4439 - covered by #4564!
+
+issue/layout #4429 [
+	"[View] Rich-text `para` facet resets default settings when present"
+
+	s1: shoot/tight [rich-text {123^/234^/345^/456^/567^/678^/789}]
+	s2: shoot/tight [rich-text {123^/234^/345^/456^/567^/678^/789} para []]
+	s3: shoot/tight [rich-text top {123^/234^/345^/456^/567^/678^/789}]
+	s4: shoot/tight [rich-text left {123^/234^/345^/456^/567^/678^/789}]
+	s5: shoot/tight [rich-text right {123^/234^/345^/456^/567^/678^/789}]
+	s6: shoot/tight [rich-text bottom {123^/234^/345^/456^/567^/678^/789}]
+	s7: shoot/tight [rich-text middle center {123^/234^/345^/456^/567^/678^/789}]
+	expect [s1 .=. s2 .=. s3 .=. s4]
+	expect [text [aligned left top in s1]]
+	expect [text [aligned top right in s5]]
+	expect [text [aligned left bottom in s6]]
+	expect [text [aligned middle center in s7]]
+]
+
+;@@ TODO: #4428 - to what extent it will be fixed and what the expected behavior will be?
+;@@ TODO: #4418 - should be tested on MacOS - need to minify the examples and figure out how to aim at the menu
+
+;; #4417 - same as #3942, but on MacOS - needs no separate test
+
+issue/layout #4396 [
+	"[CRASH] [View] when converting a face with altered `template` to an image"
+	should not crash
+
+	offload [
+		extend svvs: system/view/VID/styles compose/only [
+			window2: (copy/deep svvs/window)
+			base2:   (copy/deep svvs/base)
+		]
+		append svvs/window2/template [custom-option: 'custom-value]
+		append svvs/base2/template   [custom-option: 'custom-value]
+	]
+	leaving [
+		offload [										;-- cleanup
+			remove/key svvs 'base2
+			remove/key svvs 'window2
+		]
+	]
+
+	s1: offload/return [
+		to image! view/no-wait make-face 'window
+	]
+	s2: offload/return [
+		to image! view/no-wait make-face 'window2
+	]
+	s3: offload/return [			;-- can't use `shoot` here as it may cast to image on a window rather than on a base
+		view/no-wait [b1: base]
+		to image! b1
+	]
+	s4: offload/return [
+		view/no-wait [b2: base2]
+		to image! b2
+	]
+	expect [s1 = s2]
+	expect [s3 = s4]
+
+]
+
+issue/interactive #4388 [
+	"[View] `show` draws outdated window content when resizing"
+
+	display/flags [
+		do [
+			resize: func [face] [
+				unless face/parent/state [exit]
+				system/view/auto-sync?: no
+				face/size/x: face/parent/size/x - 20
+				system/view/auto-sync?: yes
+				show face/parent
+			]
+			r: [resize face face/parent/size]
+		]
+		below
+		t1: text #608 #FD4 "left"   left   react r
+		t2: text #608 #FD4 "center" center react r
+		t3: text #608 #FD4 "right"  right  react r
+	] 'resize
+	offload [t1/parent/size/x: 500]
+	s1: shoot/real t1
+	s2: shoot/real t2
+	s3: shoot/real t3
+	t1: sync t1
+	t2: sync t2
+	t3: sync t3
+	param [t1/size/x] [460 < 470 < 480 > 490 > 500]
+	param [t2/size/x] [460 < 470 < 480 > 490 > 500]
+	param [t3/size/x] [460 < 470 < 480 > 490 > 500]
+	expect [x1: text [aligned left   in s1]]
+	expect [x2: text [aligned center in s2]]
+	expect [x3: text [aligned right  in s3]]
+	param [x1/found-size/x] [ 7 <  9 < 15 > 40 > 50]
+	param [x2/found-size/x] [12 < 16 < 30 > 60 > 70]
+	param [x3/found-size/x] [10 < 12 < 20 > 50 > 60]
+]
+
+issue/interactive #4384 [
+	"[View] `on-up` event locking on clicks"
+
+	;; logic: 
+	display [
+		do [list: []]
+		b1: base on-up [
+			append list 'up
+			view/no-wait [b2: button [unview/all]]
+		]
+	]
+	click b1				;-- this should show b2
+	b2: sync b2
+	click b2				;-- this click should close b2
+	click/right b2			;-- to avoid double-click event without waiting 1 sec
+	click b2				;-- this should go to the background
+	list: sync list
+	expect [list = [up]]
+]
+
+issue/interactive #4380 [
+	"[View] [Regression] Mouse over started skipping the 1st event"
+
+	;; logic: move the mouse in and out 3 times, collect event info, check it
+	display/with [
+		do [list: []]
+		b: area 100x100 all-over on-over [repend list [event/offset event/away?]]
+	][	offset: 200x200 ]		;-- need a fixed offset for away event offset check
+	
+	pos: b ~at~ 40x40
+	loop 3 [					;-- 1st iteration doesn't fail, but subsequent ones
+		move-pointer pos					;-- generate 40x40 event
+		move-pointer/async pos + 10x10		;-- /async won't register it, will be overridden by the next (by design?)
+		move-pointer pos + 20x20			;-- generate 60x60 event
+		move-pointer 0x0					;-- generate away event
+		offload [append list '---]			;-- just a delimiter
+	]
+
+	list: sync list
+	period: index? find list '---
+	expect [3 * period = length? list]		;-- 3 equal results expected
+	part1: copy/part list period
+	part2: copy/part skip list period period
+	part3: copy skip list period * 2
+	expect [part1 .=. part2 .=. part3]
+
+	bools: keep-type list logic!			;-- 2 events inside, 1 outside; repeat..
+	expect [bools = reduce [no no yes  no no yes  no no yes]]
+
+	set [ofs-40 _ ofs-60 _ ofs-away _ _] part1		;-- check all offsets
+	param [ofs-40/x]         [37 < 38 < 40 > 42 > 43]
+	param [ofs-40/y]         [37 < 38 < 40 > 42 > 43]
+	param [ofs-60/x]         [57 < 58 < 60 > 62 > 63]
+	param [ofs-60/y]         [57 < 58 < 60 > 62 > 63]
+	param [ofs-away/x + 212] [-40 < -20 < 0 > 20 > 40]
+	param [ofs-away/y + 232] [-50 < -30 < 0 > 30 > 50]
+]
+
+issue/interactive #4375 [						;-- /interactive because it crashes/hangs the worker
+	"[CRASH] [View] When using `throw` from within an actor"
+	should not crash
+	should not hang								;@@ TODO: such flags should automatically make the issue non-parallelizable
+
+	;; logic: it's important that `throw` doesn't get wrapped into worker's `try`, so it has to be an event
+	output: offload [view/no-wait [button rate 10 on-time [try [throw 1]]]]
+	wait 1										;-- let it process events, so the timer kicks in
+	append output offload/silent []				;-- try a dummy code to detect if worker has crashed/hung
+	;; "Throw Error: no catch for throw: 1" (must be distinguished from "Runtime Error 95: no CATCH for THROW")
+	expect [find output "Throw Error"]
+]
+
+;@@ TODO: #4374 - what will be decided?
+
+;@@ TODO: idk why, it gives false results every 2nd time or so... maybe catches GDI during redraw?!
+; issue/interactive #4373 [		;@@ BUG: this test is dangerous to OS stability - should it be run at all?
+; 	"[View] Wrecked by drawing text on your base"
+
+; 	top-window: display/with lt: collect [
+; 		keep [
+; 			backdrop magenta
+; 			space 2x2
+; 			do [n: 0]
+; 		]
+; 		repeat i 450 [
+; 			keep [base 30x30 white]
+; 			if i % 30 = 0 [keep 'return]
+; 		]
+; 	][
+; 		rate: 11
+; 		actors: object [
+; 			on-time: function [fa ev] [
+; 				set 'n n + 1
+; 				foreach base fa/pane [
+; 					base/draw: compose [font (make font! [size: 15]) text 0x0 "ABC"]
+; 				]
+; 			]
+; 		]
+; 	]
+; 	shots: []
+; 	wait 5											;-- redraw is SUPER slow, at least 2 seconds - have to be sure everything is ready
+; 	while-waiting 0:0:20 [true] [					;-- shoot it periodically, check for text disappearance (5 sec should be enough, but who knows...)
+; 		wait 0.3									;-- not too many shots, to save RAM
+; 		prev: last shots
+; 		append shots shot: shoot/real/async top-window
+; 		if all [prev prev <> shot] [break]
+; 	]
+; 	prev-1: pick tail shots -2
+; 	n: sync n
+; 	expect [n > 0]									;-- check that on-time was triggered at all
+; 	expect [(shot = prev) and (none <> shot)]		;-- last screenshot is different => some text disappeared
+; 	restart-main-worker								;@@ BUG: worker has to be restarted (or no more text drawn)
+; ]
+
+issue/interactive #4356 [
+	"Newlines ignored in BUTTON text"
+
+	;@@ TODO: rethink this all when `text` becomes smarter
+	;@@ (at least it will be possible to check if glyphs are truncated or not, by their min size)
+
+	;; logic: obtain the text geometry, check it (nr. of glyphs, their size & offset)
+	display [b: button 80 wrap "█^/█^/█^/█^/█^/█^/█^/█^/█^/█"]
+	s1: shoot b										;-- includes borders of unknown size
+	s2: get-image-part s1  3x3  s1/size -  6x6		;-- may include borders or not
+	s3: get-image-part s1 10x10 s1/size - 20x20		;-- should not include borders
+	gs1: glyphs-on s1								;-- should be wrong - detects button outline
+	gs2: glyphs-on s2								;-- may correctly detect text
+	gs3: glyphs-on s3								;-- should be correct but truncated
+	width: gs3/size/x
+	height: foreach gs reduce [gs1 gs2 gs3] [		;-- correct height is the maximum one that has a correct width
+		if width = gs/size/x [break/return gs/size/y]
+	]
+	center: 20 + gs3/size/x / 2 + gs3/offset/x
+	; expect [10 = max gs3/count gs2/count]			;@@ TODO: glyphs are not counted vertically yet; use this once they are
+	param [width ] [ 3 <  4 <  6  > 15  > 25 ]
+	param [height] [60 < 80 < 125 > 200 > 250]
+	param [center] [30 < 34 < 40  > 46  > 50 ]		;-- half of button's width = 40
+]
+
+issue/interactive #4355 [
+	"[View] Tardy resize events"
+
+	;; bug only appears while LMB is down, but during this time `do-events` won't return
+	;; so I have to go all async here and rely on timeouts
+	;; logic: extend the window 3 times, not releasing the LMB, let it update the view, and capture it
+	top-window: display/flags/with [
+		panel 100x100 gold react [face/size: face/parent/size - 20x20 wait 0.3]
+	] 'resize [offset: 500x300 size: 120x120]
+
+	psz: 100x100
+	move-pointer p: 501x350
+	simulate-input-raw [+ lmb]		;@@ TODO: any higher level way to do this?
+	loop 3 [
+		move-pointer/async p: p - 100x0
+		psz: psz + 100x0
+		wait 1										;-- let it finish wait 0.3 and redraw itself
+		append shots: [] s: shoot/real/async top-window
+		append/only boxes: [] box [size: psz at s 10x10 > 99% all gold]
+	]
+	simulate-input-raw [- lmb]
+	s1: s2: s3: b1: b2: b3: none
+	set [s1 s2 s3] shots
+	set [b1 b2 b3] boxes
+
+	expect [b1]
+	expect [b2]
+	expect [b3]
+]
+
+;@@ TODO: #4344 - how to *reliably* trigger this bug?
+
+issue/interactive #4342 [
+	"[View] `on-over` spams the queue when layout changes within the actor"
+
+	;; logic: hover over the face, hold it over it still
+	;; a change of some face's size in on-over handler may retrigger the on-over event (~10 times/sec)
+	resize: variant 1 [[b2/size: 161x161 - b2/size]]	;-- 80->81 then 81->80
+	        variant 2 [[b1/size: 161x161 - b1/size]]	;-- more sophisticated: same face's size changes
+	move-pointer 0x0
+	display compose/deep [
+		do [list: []]
+		b1: base 80x80 all-over on-over [
+			append list event/offset
+			(resize)
+		]
+		b2: base 80x80 hidden
+	]
+	move-pointer b1 ~at~ 40x40
+	wait 0.5								;-- need to waste some time until it processes resize and re-enters on-over
+	move-pointer 0x0
+	list: sync list
+	expect [2 = length? list]
+	param [list/1/x] [38 < 39 < 40 > 41 > 42]
+	param [list/1/y] [38 < 39 < 40 > 41 > 42]
+]
+
+issue/interactive #4338 [
+	"Asynchronous keyboard handler discards mod keys on Windows"
+
+	;; logic: press a key combo without delays, see if mods were registered (3-key combos can be registered hotkeys, so using just shift)
+	display [
+		do [list: []]
+		field focus on-key [
+			repend list [event/shift? event/key]
+		]
+	]
+	sim-key/mods #" " [shift]
+	list: sync list
+	expect [list = reduce [yes #" "]]
+]
+
+;; #4337 - GUI console & `call` bug, too hard to test
+
+issue/layout #4334 [
+	"[VID] Incorrect height inferrence from DROP-DOWN"
+
+	s1: shoot [drop-down]
+	s2: shoot [drop-down font-size 50]
+	s3: shoot [drop-down font-size 100]
+	expect [s1/size/y + 20 < s2/size/y]
+	expect [s2/size/y + 20 < s3/size/y]
+]
+
+issue/layout #4333 [
+	"[VID] FIELD should be able to derive it's size from the font alone"
+
+	s1: shoot [field font-size 30]
+	s2: shoot [field font-size 30 ""]
+	s3: shoot [field font-size 30 "x" on-created [face/text: ""]]
+	expect [s1 .=. s2 .=. s3]
+]
+
+issue/interactive #4330 [
+	{[View] Button "focused" indicator disintegrates after unview}
+
+	;; this one was quite hard to catch as it does not appear in sync mode
+	;; logic: worker displays a window 3 times, we interact with it, not syncing with the worker
+	top-window: display/with [] [	;-- draft window - only use to repeat the geometry of the window it will show next
+		offset: 0x0 size: 250x250
+	]
+	jobs/send-main [				;-- let the worker be unresponsive for a nick of time
+		imgs: []
+		loop 3 [
+			view/options [
+				button 200x200 focus [append imgs to image! face/parent]
+			][	offset: 0x0 size: 250x250]
+		]
+	]
+	loop 3 [						;-- asynchronously interact with the worker
+		wait 0.3
+		click/async 125x125
+		close top-window			;-- since top-window looks the same as the new windows, an attempt to close it - closes the new windows instead
+									;@@ BUG: watch out for changes in `close` - if it really closed the target window, this could not work
+	]
+	imgs: reduce sync imgs			;-- should contain 3 screenshots
+	expect [3 = length? imgs]
+	s1: imgs/1						;-- expose them as words for inspection
+	s2: imgs/2
+	s3: imgs/3
+	expect [s1 .=. s2 .=. s3]
+]
+
+issue #4321 [
+	"[VID] Shared state in LAYOUT causes stack overflows"
+	should not error out			;-- serves as a test condition
+
+	;; logic: this causes a stack overflow, error gets detected & rethrown - `should not` fails
+	offload [
+		unview/only view/no-wait [
+			base react [
+				face/text		;) define a reactive source
+				layout []		;) restart process-reactors
+			]
+		]
+	]
+]
+
+issue #4319 [
+	"[View] Irregularities in event processing"
+	should not crash
+
+	ok?: no
+	;; this test fails so badly that the worker's View becomes unusable and it has to be restarted!
+	leaving [unless ok? [restart-main-worker]]
+
+	variant 1 [
+		;; logic: worker will process all events in any case,
+		;; but I mark the exit point with `!` and check if all closing markers `-` came before it
+		;; error rate is 50-70%, so with 10 attempts the probability of false success report is < 0.1%
+		loop 10 [
+			output: offload [			;-- `offload` will catch error reports and rethrow
+				list: []
+				base1: view/no-wait [base green]
+				loop 5 [
+					view/no-wait/options [
+						base rate 10
+						on-time [
+							face/rate: none
+							append list '-
+							unview/only face/parent
+						]
+					] [offset: random system/view/screens/1/size - 100x100]
+				]
+				loop 5 [do-events]
+				append list '!
+				unview/all
+			]
+			list: sync list
+			expect [list = [- - - - - !]]		;-- freeze or error will stop the loop, and we'll stop waiting
+		]
+	]
+
+	variant 2 [
+		;; logic: same as above
+		loop 10 [
+			output: offload [			;-- `offload` will catch error reports and rethrow
+				list: [0]
+				view/no-wait [base green]
+				loop 100 [
+				    view/no-wait [
+				        base rate 100
+				        on-time [
+				            face/rate: none
+				            list/1: list/1 + 1
+				            unview/only face/parent
+				        ]
+				    ]
+				]
+				loop 100 [do-events]
+				insert list '!			;-- replace the number so all subsequent increments will fail (they shouldn't occur)
+				unview/all
+			]
+			list: sync list
+			expect [list = [! 100]]		;-- freeze or error will stop the loop, and we'll stop waiting
+		]
+	]
+
+	ok?: yes
+]
+
+;; #4312 - a mistake
+
+issue/interactive #4306 [
+	"[View] A call to `view` destroys events sometimes"
+
+	offload [system/view/capturing?: yes]
+	leaving [offload [system/view/capturing?: no]]
+	display [
+		do [list: []]
+		b: base 80x80 magenta
+		on-detect [if find [down up] event/type [append list event/type]]
+		on-down [view/options [base rate 10 on-time [unview]] [offset: 99x99]]
+	]
+	loop 4 [click b]
+	list: sync list
+	expect [list = [down up  down up  down up  down up]]		;-- buggy output is: [down up up  down up up]
+]
+
+issue/interactive #4292 [
+	"[View] `tight` keyword is order-dependend and little too tight"
+
+	top-window: display [
+		below
+		;; logic: these 3 should be equal
+		t1: text "text" blue
+		t2: text "text" tight blue
+		t3: text tight blue "text"
+		return
+
+		;; logic: each face's width should be at least it's height + text size
+		r1: radio blue "text" tight
+		c1: check blue "text" tight
+		dd: drop-down blue "text" tight
+		dl: drop-list blue "text" tight
+		a1: area blue "text" tight
+		;; didn't include `group-box` - unreliable across platforms
+		return
+
+		;; logic: compare sizes of tight and not-tight layouts
+		g1: group-box blue "abc" tight [base]
+		g2: group-box blue "abc" [base]
+	]
+	shot: shoot top-window						;-- save the artifact for nitpicky comparison
+
+	expect [t1/size .=. t2/size .=. t3/size]
+
+	s0: min t1/size t2/size t3/size				;-- assuming at least one layout is correct, choose it for comparison
+	w: s0/x
+
+	expect [r1/size/y + w <= r1/size/x]
+	expect [c1/size/y + w <= c1/size/x]
+	expect [dd/size/y + w <= dd/size/x]
+	expect [dl/size/y + w <= dl/size/x]
+	expect [a1/size/y + w <= a1/size/x]
+
+	expect [g2/size .<. (g1/size + 30)]			;-- 30px = 10*2 (padding) + some extra for the rounding
+	expect [80x80 .<. g1/size]					;-- should be at least of the default base size (fallback test in case `sb` is wrong)
+]
+
+;; #4291 - GC bug, irrelevant
+
+;@@ TODO: #4280 - buttons/checkboxes/radiobuttons can be heavily decorated
+;; so I'm not sure how to properly detect text alignment on them
+;; this will require a reliable text detection algorithm (discard squares, rounds, ignore gradients, etc)
+; issue/layout #4280 [
+; 	"[View] custom font resets alignment for BUTTON, CHECK and RADIO"
+; view compose [button "1" left button left font-color (system/view/metrics/colors/text) "1"]
+; view compose [button "1" right button right font-color (system/view/metrics/colors/text) "1"]
+; ]
+
+;; #4276 - GUI console bug; too hard to test; not worth it
+
+issue/interactive #4275 [
+	"[View] Wheels behavior is inconsistent between Windows versions"
+	;; this one fails on W7-W8, but not on W10
+	;@@ TODO: it's unclear what is the "right" behavior - should be a design decision
+
+	;; logic: roll the wheel - events should be detected
+	display [
+		do [list: []]
+		b: base on-wheel [append list event/picked]
+	]
+	move-pointer b ~at~ (b/size / 2)		;-- does it matter where the pointer is?
+	roll-the-wheel up
+	roll-the-wheel up
+	list: sync list
+	expect [list = [1 1]]
+]
+
+issue/layout #4271 [
+	"[GTK] NO-BUTTONS window flag has no effect"
+	;@@ TODO: not sure how to test this! all platforms/desktop managers will look differently
+	;@@ and will likely require per-platform test adjustments
+	;; on Windows: window appears without buttons and icon, so just need to ensure it contains no small boxes
+
+	shot: shoot/whole/with [] [size: 100x100 flags: 'no-buttons]
+	b20: box [20x20 at shot]
+	b15: box [15x15 at shot]
+	expect [none = b20]
+	expect [none = b15]
+]
+
+issue/interactive #4270 [
+	"[View] Window offset reports inconsistent values"
+
+	;; logic: drag the window right and left, check if new offset = initial offset
+	display/with [
+		do [list: []]
+		text react [append list face/parent/offset]
+	] [offset: 200x200 size: 100x50]
+
+	;; for whatever reason, list becomes [none 200x200 200x200] here
+	;; but this exact event chain is not the test subject, we only want consistency
+	list: sync list
+	expect [[200x200] = unique keep-type list pair!]
+
+	offload [clear list]
+	drag 250x210 [right by 100]
+	list1: sync list
+
+	offload [clear list]
+	drag 350x210 [left  by 100]
+	list2: sync list
+
+	;; due to DPI rounding errors, offsets may not be exact; and 2 events may be generated
+	;; this suffers from #4560 bug and reports wrong first offsets - will be tested in the relevant issue test
+	ofs1: last list1
+	expect [2 >= length? list1]
+	param [ofs1/x] [298 < 299 < 300 > 301 > 302]
+	param [ofs1/y] [198 < 199 < 200 > 201 > 202]
+
+	ofs2: last list2
+	expect [2 >= length? list2]
+	param [ofs2/x] [198 < 199 < 200 > 201 > 202]
+	param [ofs2/y] [198 < 199 < 200 > 201 > 202]
+]
+
+issue #4269 [
+	"[Crash, View] `to-image` on some faces crashes the console"
+	should not crash
+
+	face: variant 1 ['rich-text]
+	      variant 2 ['scroller]
+	offload compose/deep [
+		view/no-wait [f: (face) "text" blue]
+		to-image f
+	]
+]
+
+;; TODO: #4268 - requires an external test!
+
+issue/interactive #4267 [
+	"[GTK] shift + tab not handled properly"
+
+	;; logic: field is focused, press a key, check output
+	display [
+		do [list: []]
+		field focus
+		on-key-down [repend list [event/shift? event/key]]
+	]
+	sim-key/mods tab [shift]
+	list: sync list
+	expect [list = reduce [yes 'left-shift yes #"^-"]]		;-- may also fail due to #4338 and yield [no #"^-"]
+
+	;; test 2 literally follows #3168, so is not included
+]
+
+issue #4266 [
+	"[GTK] crash on creating FIELD with font of zero size"
+	should not crash
+
+	;; this crashed
+	variant 1 [offload [view/no-wait [field font-size 0]]]
+
+	;; this reported an error to the console (@@ stdout or stderr? will it be caught?)
+	variant 2 [
+		output: offload [view/no-wait [field font-size -1]]
+		expect [output = ""]
+	]
+]
+
+issue/interactive #4265 [
+	"[GTK] on-focus does not work on field"
+
+	display [
+		do [list: []]
+		f1: field on-focus [append list 1]
+		f2: field on-focus [append list 2]
+	]
+	click f1
+	click f2
+	list: sync list
+	expect [list = [1 2]]
+]
+
+issue #4261 [
+	"GTK: crash with styles, custom font and appending field to pane."
+	should not crash
+
+	offload [
+		view/no-wait [f: field font-size 1]
+		make f/font [size: 1]
+	]
+]
+
+issue #4254 [
+	"[View] Script Error when killing a window just shown"
+
+	;; logic: check the output after `view` - should contain no errors
+	output: offload [
+		list: []
+		view [base on-created [append list 'created unview]]
+		probe list
+	]
+	expect [output = "[created]"]
+]
+
+issue/layout #4253 [
+	"[View] Base started feeding on text"
+	
+	;; logic: just count glyphs drawn; Verdana is best for this
+	variant 1 [
+		shot: shoot [
+			backdrop purple
+			base purple cyan
+			font-name "Verdana" font-size 10 "OOO OOO OOO"
+		]
+		glyphs: glyphs-on shot
+		expect [9 = glyphs/count]
+	]
+
+	;; logic: display the box, measure it, display a bit smaller box - check if we didn't lose last letter
+	variant 2 [
+		offload [font1: make font! [name: system/view/fonts/fixed size: 30 color: black]]
+		
+		shot1: shoot [			;-- this face is to measure the proper size
+			backdrop white
+			b: box "A B C" left top font font1
+		]
+		b: sync b
+		shot2: shoot (compose [	;-- now clip it by 5px
+			backdrop white
+			b: box (as-pair b/size/x - 5 b/size/y) "A B C" left top font font1
+		])
+		gs1: glyphs-on shot1
+		gs2: glyphs-on shot2
+		expect [3 = gs1/count]
+		expect [3 = gs2/count]
+	]
+]
+
+;; TODO: #4252 - requires an external test, it's too big
+
+issue/interactive #4251 [
+	"GTK: set-focus does not work"
+
+	;; logic: click button (sets focus to base), press a key, check if registered
+	display [
+		do [list: []]
+	    b: button "give focus to blue rectangle" [set-focus bb]
+	    bb: base blue on-key-down [append list event/key]
+	]
+	click b
+	sim-key #"a"
+	list: sync list
+	expect [list = [#"A"]]
+]
+
+issue/interactive #4248 [
+	"parent window does not regain focus on macOS"
+
+	;; logic: display a window; then show & close another on top of it; check if former has the focus
+	display [
+		do [list: []]
+		b1: button 100x100 "show" focus [				;-- `focus` to capture keys
+		 	view/no-wait [b2: button 50x50 "close" [unview]]
+		]
+		on-key-down [append list event/key]
+	]
+	sim-key #"a"
+	list: sync list
+	expect [list = [#"A"]]		;-- test if initial focus is working (sanity check)
+
+	click b1					;-- show new window
+	b2: sync b2
+	click b2					;-- close new window
+	
+	sim-key #"b"
+	list: sync list
+	expect [list = [#"A" #"B"]]
+]
 
 issue/interactive #4247 [
 	"[View] RADIO is toggled by default on GTK"
@@ -993,10 +1847,11 @@ issue/interactive #3793 [
 		]
 		(face) focus on-wheel [append list "ROLLED OVER"]
 	]
+	leaving [offload [remove-event-func :evfun]]		;-- cleanup
+
 	roll-the-wheel up
 	list: sync list
 	expect [empty? list]
-	offload [remove-event-func :evfun]		;-- cleanup
 ]
 
 issue/layout #3789 [
@@ -1113,7 +1968,7 @@ issue/layout #3760 [
 	s1: shoot [text "one^/two^/three^/four" 200 red]
 	s2: shoot [text "one^/two^/three^/four" 200 red white]
 	; expect [s1/size = s2/size]			;-- 'white' should not affect the size
-	;@@ it affects it though, see issue comment; let it produce a warning
+	;@@ it affects it though, see issue comment; let it produce a warning:
 	param [s1/size/y - s2/size/y] [-8 < -2 < 0 > 2 > 8]
 ]
 
@@ -1296,6 +2151,7 @@ issue/interactive #3723 [
 			]
 		]
 	]
+	leaving [offload [remove/key system/view/VID/styles 'bomb]]	;-- cleanup
 
 	top-window: display [
 		size 200x100
@@ -1306,8 +2162,6 @@ issue/interactive #3723 [
 	close top-window
 	list: sync list
 	expect [list = "++"]
-	
-	offload [remove/key system/view/VID/styles 'bomb]	;-- cleanup
 ]
 
 issue/interactive #3722 [
@@ -1362,6 +2216,7 @@ issue/interactive #3693 [
 				sort words-of f2/actors
 		]
 	]
+	leaving [offload [remove/key system/view/VID/styles 'square3693]]		;-- cleanup
 
 	display [
 		size 400x150
@@ -1371,8 +2226,6 @@ issue/interactive #3693 [
 	click sq
 	list: sync list
 	expect [list = [created! clicked! object! on-created on-down created! object! on-created]]
-
-	offload [remove/key system/view/VID/styles 'square3693]		;-- cleanup
 ]
 
 issue/layout #3691 [
@@ -1397,21 +2250,19 @@ issue/interactive #3677 [		;@@ TODO: finish this one - it so heavily suffers fro
 
 	;; logic: move the group-box, see if the sub-face has moved
 	offload [img: make image! reduce [100x100 red]]
-	top-window: display
-		variant 1 [[
-			backdrop white  size 400x200
-			gb: group-box loose [b: button [gb/offset/x: 100] i: image img]
-		]]
-		variant 2 [[
-			backdrop white  size 400x200
-			gb: group-box loose [b: button [gb/offset/x: 100] i: base #FF000001]
-		]]
+	face: variant 1 [[image img]]
+	      variant 2 [[base #FF000001]]
+	top-window: display compose/deep [
+		backdrop white  size 400x200
+		gb: group-box loose [b: button [gb/offset/x: gb/offset/x + 100] i: (face)]
+	]
 	s: shoot/real top-window
 	expect [box [around s/i > 90% almost red]]
 	click b
-	i: sync i
+	i2: sync i
 	s: shoot/real top-window
-	expect [box [around s/i > 90% almost red]]
+	expect [b2: box [around s/i2 > 90% almost red]]
+	expect [b2/offset/x > 200]				;-- ensure the test system didn't degrade and adds `gb` offset to `i` offset
 ]
 
 issue #3675 [
@@ -1480,7 +2331,6 @@ issue/interactive #3619 [
 	expect [none? r]
 ]
 
-;; #3580 - layout part should rather be tested with #4321 tests
 ;@@ TODO: if #3580 fix produces any new tests, add them here
 
 ;; #3576 does not require a test
