@@ -319,9 +319,17 @@ boxes-ctx: context [
 	{
 		Warning: 'text' is not a strict category. `text "█"` is indistinguishable from `base NxM`
 		Current implementation just finds the area covered by anything-but-background.
+
 		Ideally I would measure median color of each X and Y line, then subtract that from the image
 		to emphasize the (noisy) text vs background, but that's not a top priority.
 		Just use shoot/tight or any other means to discard the frame from the image and it'll work.
+
+		Or idea: apply edge detection filter - the harder the edge is, the brighter the result
+		then discard edges longer than specified length (e.g. 10px) - to remove boxes (circles will remain though...)
+		(maybe another, optional, filter: remove 1px lines, leave only 1.5-2px and more)
+		then blur the result and apply a threshold
+		after that all that remains is to localize the blob using the existing algorithm
+		#4280 will require such a measure
 	}
 
 	;@@ TODO: warning when used not on a solid background (e.g. when there's a frame) - or better: make it ignore that frame
@@ -498,6 +506,14 @@ boxes-ctx: context [
 			if 2 < max ds/x ds/y [return no]		;@@ OK to have 2px difference?
 		]
 		yes
+	]
+
+	set 'glyphs-offset func [boxes [block!]] [
+		pixels-to-units first boxes		;-- none if no glyphs
+	]
+
+	set 'glyphs-total-size func [boxes [block!]] [
+		all [first boxes  pixels-to-units subtract last boxes first boxes]
 	]
 
 	; ;@@ TODO: always test fonts separation for used fonts?
