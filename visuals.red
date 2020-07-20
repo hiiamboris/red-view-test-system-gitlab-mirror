@@ -103,14 +103,16 @@ once visuals-ctx: context [
 		either real [
 			pix-ofs: client-offset-of face
 			either window? [
-				pix-sz:  window-size-of wndw					;-- need precise non-rounded size of it
+				pix-sz: size-of wndw							;-- need precise non-rounded size of it
 				brdr: borders-of wndw
 				either whole
 					[pix-ofs: pix-ofs - brdr/1]					;-- translate client offset to nonclient offset
 					[pix-sz:  pix-sz  - brdr/1 - brdr/2]		;-- contract the capture size
 			][
-				pix-sz: units-to-pixels face/size				;@@ TODO: obtain non-rounded size
+				pix-sz: size-of face
 			]
+			#assert [0 < pix-sz/x]
+			#assert [0 < pix-sz/y]
 			capture/area/real pix-ofs pix-ofs + pix-sz			;-- `capture` saves and logs the result
 		][
 			#assert [any [img  face? wndw]]						;-- if it just 'quacks-like', to-image branch will crash
@@ -119,8 +121,8 @@ once visuals-ctx: context [
 			either window? [
 				unless whole [img: get-image-part img brdr/1 img/size - brdr/2 - brdr/1]
 			][
-				pix-ofs: brdr/1 + units-to-pixels face-to-window 0x0 face	;@@ TODO: obtain pixel-precise offset
-				pix-sz: units-to-pixels face/size							;@@ TODO: obtain non-rounded size
+				pix-ofs: (client-offset-of face) - (client-offset-of wndw) + brdr/1
+				pix-sz: size-of face
 				img: get-image-part img pix-ofs pix-sz
 			]
 			#assert [0 < length? img]
@@ -449,7 +451,7 @@ once visuals-ctx: context [
 
 	explore-artifact: function [art [object!]] [
 		;@@ TODO: add & show artifact time
-		explore-value: function [v /local k] [
+		explore-value: function [v /name txt /local k] [
 			case [
 				object? o: :v [
 					exp-map: copy #()
@@ -465,14 +467,19 @@ once visuals-ctx: context [
 							on-click [
 								either act: select exp-map (to lit-word! k)
 									[do with o act]
-									[explore-value quote (:v)]
+									[explore-value/name quote (:v) (form k)]
 							]
 							return
 						]
-					] 'resize [text: rejoin ["Artifact " attempt [o/key]]]
+					] 'resize [text: #composite "Artifact (any [attempt [o/key] txt])"]
 				]
-				image? :v [
-					explore v
+				block? b: :v [
+					view/flags/options elastic compose [
+						area 300x200 #scale (mold/part :v 100000)
+					] 'resize [text: #composite {Block "(txt)"}]
+				]
+				image? i: (v) [			;-- evaluates if it's a function - by design!
+					explore/title i #composite {Image "(any [txt i/size])"}
 				]
 			]
 		]
@@ -488,6 +495,8 @@ once visuals-ctx: context [
 		object compose [
 			found?: not empty? bxs
 			count: (length? bxs) / 2
+			offset:         glyphs-offset       bxs
+			size:           glyphs-total-size   bxs
 			min-size:		min-glyph-size		bxs
 			max-size:		max-glyph-size		bxs
 			min-distance:	min-glyph-distance	bxs
@@ -837,6 +846,7 @@ once visuals-ctx: context [
 
 		;@@ TODO: better name? this is too common
 		;@@ TODO: describe it's spec; make manual tests
+		;; example: text [100x100 left in image/area], text [in image] ...
 		set 'text function [
 			"Verify text alignment and size with the provided SPEC"
 			spec [block!]
@@ -869,7 +879,7 @@ once visuals-ctx: context [
 			if any [spec/h-anchor spec/v-anchor] [
 				align-valid?: check-alignment box/1 box/2 image/size spec/h-anchor spec/v-anchor
 			]
-			art/result: all [align-valid? size-valid?]
+			if art/result: all [align-valid? size-valid?] [art]		;-- return the artifact for inspection; or none
 		]
 	]
 
