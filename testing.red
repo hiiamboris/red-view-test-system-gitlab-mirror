@@ -312,6 +312,7 @@ once toolset: context [
 		]
 		;@@ TODO: should `display` call `settle-down`?
 		#assert [quacks-like-face? top-window]
+		activate top-window			;-- whatever the reason, this is required, or the window may be shown BELOW background! (4467 is a good test for that)
 		top-window
 	]
 
