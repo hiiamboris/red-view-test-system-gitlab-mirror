@@ -218,7 +218,7 @@ once dope-ctx: context [
 
 
 	make-context-for: function [code [block!]] [
-		sw: collect-set-words code
+		sw: exclude collect-set-words code [on-change* on-deep-change*]		;-- cannot be set to `none`, bug-prone
 		ctx: context compose [(sw) none]
 		bind-only code bind sw ctx
 		ctx
