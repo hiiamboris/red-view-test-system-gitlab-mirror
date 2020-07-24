@@ -21,6 +21,7 @@ Red [
 ;;   third, it helps to review tests in the Perspective GUI by telling what results one should expect and how to tell if they failed
 
 
+--4576--
 
 issue/interactive #4564 [
 	"[CRASH, View] in drop-down & drop-list when clicking outside the face"
@@ -39,7 +40,316 @@ issue/interactive #4564 [
 	offload []
 ]
 
-;@@ #4465 on auto-sync null window handle - will it be fixed?
+--4560--
+--4557--
+
+;@@ TODO: #4556 on zero index - will it be fixed and how?
+
+issue #4554 [
+	"[Regression, View] 2x slower face construction than before"
+
+	;; logic: measure face creation speed with size=0x0 and size=10x10 and compare
+	offload [recycle/off]
+	leaving [offload [recycle/on]]
+
+	sizes: [0x0 10x10]
+	times: []
+	foreach size sizes [
+		t0: now/precise
+		offload/timeout compose/deep [
+			v: view/no-wait []
+			mem: stats
+			loop 500 [append v/pane make face! [type: 'text offset: 0x0 size: (size)]]
+			loop 3000 [do-events/no-wait]
+			mem: stats - mem
+			unview
+		] 0:1:0		;-- wait a whole minute max, for it may take ~15 secs when buggy, <1 sec when OK
+		append times difference now/precise t0
+	]
+	slowdown: 100% * (times/2 / times/1)
+	param [slowdown] [60% < 70% < 100% > 150% > 200%]		;-- should be no speedup, but allow some error for random nature of timings
+	param [to float! times/2] [0.01 < 0.05 < 1 > 5 > 10]	;-- expected time is ~1 second, too fast/slow is suspicious.. though CPU dependent :/
+]
+
+;@@ TODO: #4553 on transparency with rich-text - will it be granted?
+
+issue/interactive #4551 [
+	"on-enter on macOS not working"
+
+	display [do [list: []] f: field focus on-enter [append list "works"]]
+	sim-key enter
+	list: sync list
+	expect [list = ["works"]]
+]
+
+issue #4549 [
+	"[View] `return or exit not in function` seemingly random error & CRASH"
+	should not crash
+	should not error out
+
+	;; logic: this is only reproducible as a separate file, so we have create it
+	write file: %issue-4549-crasher.red {
+		Red [needs: view]
+
+		insert-event-func func [fa ev] [
+			unless ev/type = 'close [return 'nowai]
+			none
+		]
+
+		extend system/view/VID/styles [
+			baad: [
+				template: [
+					type:   'base
+					rate:   5			;) generate events
+					size:   10x10
+					react/later [self/size]
+				]
+			]
+		]
+
+		i: 0
+		view/no-wait/options [c: baad] [offset: 0x0 size: 200x100]
+		f: does [if yes [c/size: 100x100]]
+		f
+
+		do-events
+	}
+
+	;; it doesn't appear with `do/no-wait` so we have to let worker block itself and work asynchrounously
+	jobs/send-main compose [do (file)]
+	wait 1															;-- wait for a few timer events to kick in
+	close make face! [type: 'window offset: 0x0 size: 200x100]		;-- predefined geometry since we can't sync
+	offload []														;-- catch the crash (it happened asynchrounously)
+]
+
+;@@ TODO: #4548 on secretive error message - what error message should we expect? will it be fixed?
+
+issue #4546 [
+	"[CRASH] In `make face!` that contains a self-reference"
+	should not crash
+	offload [make face! [self2: self]]
+]
+
+issue #4543 [
+	"[CRASH, Regression] In face/on-change* (stack corruption?)"
+	should not crash
+
+	;; logic: need 5 locals to crash
+	onchange: variant 1 [[function probe spec-of :face!/on-change* [if a: none []]]]
+	          variant 2 [[function [w o n /local b c d e]   [if a: none []]]]
+	          variant 3 [[func     [w o n /local b c d e a] [if a: none []]]]
+	          variant 4 [[func     [w o n /local a b c d e] [if e: none []]]]
+	offload compose/deep [
+		extend svvs: system/view/VID/styles [
+			crash: [template: [type: 'base  size: 100x100  on-change*: (onchange)]]
+		]
+		view/no-wait [crash]
+	]
+	leaving [remove/key svvs 'crash]		;-- evaluated after `unview`
+]
+
+issue/interactive #4539 [
+	"[CRASH] Reactively loading an area into a panel on MacOS"
+	should not crash
+
+	;; logic: sometimes need 2 clicks to focus the area, so click 2 times here 2 times there
+	display [
+	    h5 200x20 "Source" h5 200x20 "Output" return
+	    source: area 200x150 "a: area"
+	    pan: panel react [
+	        attempt/safer [face/pane: layout/tight/only load source/text]
+	    ]
+	]
+	loop 3 [
+		click/double source
+		click/double pan
+	]
+]
+
+;; 4507 - react issue, has tests in the PR
+
+;@@ TODO: #4504 on face being not-deep-reactor - will it be fixed?
+
+issue/layout #4503 [
+	"[View] Auto-sync: off may lead to inconsistent tree state"
+
+	;; logic: code is pointless, it should just display some faces, if it doesn't - it's bugged
+	offload [
+		do-with: func [path val code] [set path also get path (set path val  do code)]
+		do-unseen: func [code][do-with 'system/view/auto-sync? no code]
+		v: view/no-wait/options [c: panel blue [] 100x400] [size: 200x400]
+		resize-y: does [do-unseen [c/size/y: 300 * length? c/pane]]
+		react [[c/size/x] resize-y]
+		append c/pane reduce [make-face/spec 'base [80x80 cyan]]
+		do-unseen [c/size/x: 100]
+		show v
+	]
+	v: sync v
+	s: shoot v
+	expect [box [100x300 at s 10x10 > 70% all blue]]
+	expect [box [80x80 at s 10x10 > 95% all cyan]]
+]
+
+;; #4498 - duplicate of #3391
+
+issue #4497 [
+	"[View] CRASH with pane change & auto-sync off"
+	should not crash
+
+	;; logic: just evaluate snippets & check for crashes
+	variant 1 [
+		offload [
+			view/no-wait [p: panel [panel [f1: field on-focus [show p]] f2: text]]
+			set-focus f1
+			system/view/auto-sync?: no
+			change p/pane copy p/pane
+			system/view/auto-sync?: yes
+			show p
+		]
+	]
+	variant 2 [
+		offload [
+			view/no-wait [p: panel 100x100 [panel [f1: field on-focus [show p]]]]
+			set-focus f1
+			system/view/auto-sync?: no
+			change p/pane copy p/pane
+			show p
+			system/view/auto-sync?: yes
+		]
+	]
+	variant 3 [
+		offload [
+			insert-event-func fun: function [fa ev] [if ev/type = 'focus [makeanerror]]
+			view/no-wait [c: panel [panel [f1: field] text]]
+			set-focus f1
+			change c/pane copy c/pane
+			remove-event-func :fun
+		]
+	]
+]
+
+issue #4496 [
+	"[View] Event func returning unset blows up the event pipeline"
+	should not hang
+
+	;; logic: it disables events so we need to trigger some and check the output
+	offload [ insert-event-func fun: func [fa ev][] ]
+	leaving [offload [ remove-event-func :fun ]]
+	offload [ list: [] view [base rate 10 on-time [append list 'x if 10 = length? list [unview]]] ]
+	list: sync list
+	expect [list = [x x x x x x x x x x]]
+]
+
+issue #4490 [
+	"[View] Stack overflow when one forgets to copy the font"
+	should not error out
+
+	offload [
+		view/no-wait [p: panel bold [b: base]]
+		b/font: p/font             ;) <- forgot to copy
+		change p/pane copy p/pane
+	]
+]
+
+issue #4486 [
+	"Crash when inserting a face into window's pane"
+	should not crash
+
+	offload [
+		face1: make face! [
+		    type:   'base
+		    size:   100x100
+		    offset: 10x10
+		    color:  blue
+		]
+		face2: make face1 [
+		    offset: 130x130
+		    color:  red
+		]
+		win: make face! [
+		    type:    'window
+		    size:    800x600
+		    pane:    reduce [face1]
+		]
+		view/no-wait win
+		;append win/pane face2    ; this works
+		insert win/pane face2     ; this crashes
+	]
+]
+
+issue/layout #4481 [
+	"[Draw] Line stops after 1000 coordinates"
+
+	;; logic: draw a huge lot lines across a base, see that drawing doesn't stop early by counting colors
+	shot: shoot/tight [
+		do [
+			line: [line 0x0]
+			repeat i 4200 [append line as-pair i % 21 * 10  i / 21]
+		]
+		base 200x200 purple draw compose/only [pen gold (line)]
+	]
+	amnt: amount-of [somewhat gold on shot]
+	param [amnt] [80% < 90% < 100% < 100.1% < 100.1%]		;-- ~24% in case of bug, ~95% (loss due to aliasing) when correct
+]
+
+;; #4480 - dismissed for ownership limitations
+
+;@@ TODO: #4479 on false on-over events - will it be fixed? and how?
+
+issue/interactive #4473 [
+	"[View] Shadow faces appear when react is used during `on-create` or `init`"
+
+	;; logic: display the face, resize it, shoot & see if it's the only face now
+	link: [
+		react/link func [panel face] [
+			[face/parent]
+			panel/data: random 100
+		] [face face/pane/1]
+ 	]
+
+ 	variant 1 [
+		top-window: display/with compose/only [
+			panel 400x400 purple [b: base 200x200 cyan]
+		 	on-create (link)
+		] [size: 420x420]
+	]
+	variant 2 [
+		offload compose/deep/only [
+			extend svvs: system/view/VID/styles [
+				my-panel: [
+					template: [type: 'panel]
+					init: (link)
+				]
+			]
+		]
+		leaving [remove/key svvs 'my-panel]
+
+		top-window: display/with [
+			my-panel 400x400 purple [b: base 200x200 cyan]
+		] [size: 420x420]
+	]
+
+	offload [
+		b/offset: 0x-100
+		b/size: 100x400
+	]
+	shot: shoot top-window
+	expect [box [100x300 at shot 10x10 > 95% all cyan]]
+	param [amount-of [cyan on shot]] [15% < 16% < 17% > 18% > 19%]		;-- 100x300 / 420x420 = 17%, when bugged becomes 30%
+]
+
+;; #4472 - GUI console bugs; hard to test, not worth it		;@@ TODO: a set of manual tests for all GUI console issues?
+
+issue/interactive #4467 [
+	"[View] FIELD is limited with WRAP on"
+
+	top-window: display [f: field 50 wrap focus]
+	sim-string s0: "abcdefghijklmnopqrstuv"
+	f: sync f
+	expect [f/text = s0]			;-- when bugged, the input string will be shorter, what fits 50px only
+]
+
+;@@ TODO: #4465 on auto-sync null window handle - will it be fixed?
 
 issue/compiled #4463 [
 	"[Compiler] Internal error when overriding face's facet with an object"
@@ -56,7 +366,7 @@ issue/compiled #4463 [
 	expect [task/output = "OK"]
 ]
 
-issue/interactive #4461 [				;-- /interactive for it's crashing
+issue #4461 [
 	"[CRASH] When system object is assigned to any facet of a face"
 	should not crash
 
@@ -64,9 +374,9 @@ issue/interactive #4461 [				;-- /interactive for it's crashing
 	offload variant 2 [[layout [base data system/words]]]
 ]
 
-;@@ #4458 on `with` in VID being unset - will it be fixed? and how?
+;@@ TODO: #4458 on `with` in VID being unset - will it be fixed? and how?
 
-issue/interactive #4457 [								;-- /interactive as it can crash
+issue/interactive #4457 [
 	"face/selected too big will close the window"
 	should not crash
 
@@ -300,10 +610,10 @@ issue/interactive #4380 [
 	param [ofs-away/y + 232] [-50 < -30 < 0 > 30 > 50]
 ]
 
-issue/interactive #4375 [						;-- /interactive because it crashes/hangs the worker
+issue #4375 [
 	"[CRASH] [View] When using `throw` from within an actor"
 	should not crash
-	should not hang								;@@ TODO: such flags should automatically make the issue non-parallelizable
+	should not hang
 
 	;; logic: it's important that `throw` doesn't get wrapped into worker's `try`, so it has to be an event
 	output: offload [view/no-wait [button rate 10 on-time [try [throw 1]]]]
@@ -2684,6 +2994,14 @@ issue #3394 [
 	img1: draw 81x81 [circle 40x40 30]
 	img2: copy/part at img1 0x0 81x81		;-- this failed on MacOS
 	expect [img2 = img1]
+]
+
+issue #3391 [
+	"Console crash if break is evaluated on foreach-face loop"
+	should not crash
+	
+	offload [foreach-face layout [base] [break]]
+	;@@ TODO: will `foreach-face` ever support `break`-ing? if so, add tests for #4498 (with a branching tree)
 ]
 
 issue/interactive #3353 [
