@@ -60,6 +60,12 @@ simulator: context [
 			alt menu		['VK_LMENU]
 			enter return	['VK_RETURN]
 			tab				['VK_TAB]
+			space			['VK_SPACE]		;-- also #" "
+			up				['VK_UP]
+			down			['VK_DOWN]
+			left			['VK_LEFT]
+			right			['VK_RIGHT]
+			esc escape		['VK_ESCAPE]
 			;@@ need more?
 		][
 			either parse form w ["F" 1 2 digit] [		;-- F1-F24 keys bulk support
