@@ -20,8 +20,56 @@ Red [
 ;;   second, when an issue fails this info can be displayed to provide the person running tests with a context for failure
 ;;   third, it helps to review tests in the Perspective GUI by telling what results one should expect and how to tell if they failed
 
+issue/interactive #4602 [
+	"face request-file action alters other faces' action"
 
---4576--
+	;; logic: click on box 1, close requester, click on box 2 should not show it again - we see it by the evaluated `append`
+	;; requester blocks the event loop, so we have to go async until it's closed
+	display [
+		do [list: []]
+		b1: box white [request-file]
+		b2: box blue [append list 'ok]
+	]
+	click/async b1
+	wait 1			;-- wait for the dialog to appear (@@ TODO: wait more? it make take some time to spin the HDDs)
+	sim-key esc		;-- close the requester
+	click/async b2
+	wait 1
+	sim-key esc		;-- close the requester again if it's buggy and reappeared
+	list: sync list
+	expect [list = [ok]]
+]
+
+issue/interactive #4576 [
+	"text-list data change, advanced use case, may lead to crash sometimes"
+	should not crash		;@@ it never crashed for me.. can it crash *after* the test? should worker be restarted?
+	should not error out
+
+	variant 1 [		;-- the disappearance of data
+		;; logic: need 2 clicks on *different* lines, so we select an item, click around,
+		;; then try to return selection back (for pixel-precise comparison to work)
+		display [
+			do [d: ["1" "2" "3" "4" "5" "6" "7" "8" "yikes!" []]]
+			tl: text-list 100x300 data d [insert clear last d 1]
+		]
+		click tl ~at~ 30x50
+		s1: shoot tl
+		click tl ~at~ 30x20
+		click tl ~at~ 30x50
+		s2: shoot tl
+		expect [s1 = s2]
+	]
+	variant 2 [		;-- the unset error message
+		display [
+			;; logic: do a few clicks, collect errors (automatically caught by the test system)
+			do [d: ["1" "2" "3" "4" "5" "6" "7" "8" "yikes!" []]]
+			tl: text-list 100x300 data d [append last d ()]
+		]
+		click tl ~at~ 30x20		;-- these will error out
+		click tl ~at~ 30x50
+		click tl ~at~ 40x60
+	]
+]
 
 issue/interactive #4564 [
 	"[CRASH, View] in drop-down & drop-list when clicking outside the face"
@@ -40,8 +88,55 @@ issue/interactive #4564 [
 	offload []
 ]
 
---4560--
---4557--
+issue/interactive #4560 [
+	"[View] window offset reports outdated values"
+
+	;; logic: this bug only appears when moving the window with keys, not with mouse (why?), so may not be applicable at all to other OSes
+	;; this is also very hard to test, because alt+space will lock the event loop
+	;@@ TODO: can we rely on the "move" menu entry being the 2nd item in the menu? it will fail otherwise; accelerator keys won't work because they are localized
+	display/with [
+		do [list: []]
+		text react later [append list face/parent/offset]
+	] [offset: 0x0 size: 100x100]
+	sim-key/mods/async space [alt]
+	sim-key/async down
+	sim-key/async enter
+	loop 3 [sim-key/async right wait 0.2]
+	sim-key enter
+	list: sync list
+	expect [(last list) = pick tail list -2]		;-- coordinate before and after Enter should be the same
+]
+
+issue/interactive #4557 [
+	"[View] `text` wrap mode is ignored, controlled by alignment"
+
+	;; logic: render `text` with different flags, check if results are sane
+	;;   then check `para` behavior explicitly
+	gs1:  glyphs-on s1:  shoot [text "OOOO" font-name "Verdana"]
+	gs2:  glyphs-on s2:  shoot [text 100x50 "OOOO OOOO OOOO OOOO OOOO OOOO OOOO" font-name "Verdana"]
+	gs2l: glyphs-on s2l: shoot [text 100x50 "OOOO OOOO OOOO OOOO OOOO OOOO OOOO" font-name "Verdana" left]
+	gs3:  glyphs-on s3:  shoot [text 100x50 "OOOO OOOO OOOO OOOO OOOO OOOO OOOO" font-name "Verdana" wrap]
+	gs3r: glyphs-on s3r: shoot [text 100x50 "OOOO OOOO OOOO OOOO OOOO OOOO OOOO" font-name "Verdana" right wrap]
+	
+	param [gs1/size/y] [3 < 4 < 6 > 9 > 12]						;-- sanity check
+	param [gs1/size/y - gs2/size/y] [-3 < -1 < 0 > 1 > 3]		;-- 0 if both are not wrapped
+	expect [gs3/size/y > (gs2/size/y + 5)]						;-- wrapped should be bigger
+	expect [gs2l/size = gs2/size]								;-- `left` should not affect the layout
+	expect [gs3r/size/y = gs3/size/y]							;-- `right` should not affect the vertical size
+
+	;; now, the `para` part
+	display [t: text 100 "OOOO OOOO OOOO OOOO OOOO OOOO OOOO" font-name "Verdana"]
+	offload [t/para: p: make para! [align: none]]
+	gs4: glyphs-on s4: shoot t
+	offload [p/align: p/align]
+	gs5: glyphs-on s5: shoot t
+	offload [p/wrap?: yes]
+	gs6: glyphs-on s6: shoot t
+	
+	param [gs4/size/y - gs1/size/y] [-3 < -1 < 0 > 1 > 3]		;-- 0 if both are not wrapped
+	expect [gs5/size = gs4/size]								;-- no change expected
+	expect [gs6/size/y > (gs5/size/y + 5)]						;-- wrapped should be bigger
+]
 
 ;@@ TODO: #4556 on zero index - will it be fixed and how?
 
