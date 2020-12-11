@@ -149,7 +149,7 @@ perspective-ctx: context [												;-- hide everything in a context from acci
 				;@@ TODO: these are not very descriptive; need to add worker build data & commit for both reference and result
 				;@@ align: left is required to disable wrapping - see #4557
 				ref-label: text left font-color #BA4 (wsize/x - 260) font-size 10 #fill-x
-					rate 2 on-time [maybe face/data: to-local-file select config 'last-comparison-dir]
+					rate 2 on-time [attempt [maybe face/data: to-local-file select config 'last-comparison-dir]]
 				cwd-label: text left font-color #BA4 (wsize/x - 260) font-size 10 #fill-x
 					rate 2 on-time [maybe face/data: to-local-file what-dir]
 				return
@@ -232,7 +232,8 @@ perspective-ctx: context [												;-- hide everything in a context from acci
 				issue: issues/:key
 				#assert [issue]
 
-				rea/scores-map/:key: (1.0 * sum issue/score) / max 1 length? issue/score
+				new-score: (1.0 * sum issue/score) / max 1 length? issue/score
+				maybe rea/scores-map/:key: new-score		;-- don't recalc sum if not needed - very slow!
 
 				if all [								;-- check & update compilation status
 					find [not-compiled compiling] issue/status
