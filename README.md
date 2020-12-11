@@ -60,7 +60,10 @@ Implemented. Improvements in comparison UI are still wanted, but since View is r
 
 ### Setup
 
-I decided not to do any setups. Just clone it and call `run-w32.bat`. It uses a prebuilt by me console exe to run the system.
+It requires some mezzanines to work, so a bit of setup is required for now:
+- `git clone https://gitlab.com/hiiamboris/red-view-test-system` - this clones the test system itself
+- `git clone https://gitlab.com/hiiamboris/red-mezz-warehouse red-view-test-system/common` - clones the mezzaninse
+- `cd red-view-test-system & run-w32.bat` - runs the console prebuilt by me for Windows
 
 You can compile this console yourself:
 - `git clone https://github.com/hiiamboris/red/tree/view-test-system` - this clones Red version that contains all the necessary patches
