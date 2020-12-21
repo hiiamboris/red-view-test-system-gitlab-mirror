@@ -384,7 +384,7 @@ issue/layout #4481 [
 		base 200x200 purple draw compose/only [pen gold (line)]
 	]
 	amnt: amount-of [somewhat gold on shot]
-	param [amnt] [80% < 90% < 100% < 100.1% < 100.1%]		;-- ~24% in case of bug, ~95% (loss due to aliasing) when correct
+	param [amnt] [80% < 90% < 100% > 100.1% > 100.1%]		;-- ~24% in case of bug, ~95% (loss due to aliasing) when correct
 ]
 
 ;; #4480 - dismissed for ownership limitations
@@ -1875,6 +1875,7 @@ issue/layout #4006 [
 	    ]
 	]
 	param [amount-of [red on shot]] [7% < 8% < 10% > 11% > 12%]		;-- 9.5% ideally, pen off if 3%
+	param [amount-of [green on shot]] [56% < 58% < 60% > 62% > 64%]	;-- 59.7% ideally, fill-pen off if < 10%
 ]
 
 issue/compile/interactive #4005 [
