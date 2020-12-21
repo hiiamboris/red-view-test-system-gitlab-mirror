@@ -415,7 +415,7 @@ once visuals-ctx: context [
 		sum-white: area * 3 * 255.0						;-- 3 for R,G,B, 255 for max brightness
 		dif: (abs sum2 - sum1) / sum-white				;-- relative difference in overall brightness
 		; ? dif
-		dif <= fuzz
+		dif <= (fuzz ** 2)
 	]
 
 	; ;@@ BUG: this is not a proper blur, as each next image gets composed with the whole stack of previous images
