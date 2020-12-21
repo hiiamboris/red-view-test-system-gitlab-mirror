@@ -337,8 +337,17 @@ jobs: make any [value-of jobs  object!] [
 		s
 	]
 
+	;-- when stack corruption happens, error output may become malformed and unloadable
+	;-- this func removes any such corrupted bytes
+	safe-to-string: function [b [binary!]] [
+		while [error? e: try [r: to string! b]] [
+			remove find b e/arg1
+		]
+		r
+	]
+
 	peek-worker-output: function [worker [object!]] [		; does not consume but returns unprocessed part of worker's output file
-		remove-GC-output to string! read/binary/seek worker/stdout worker/stdout-offset
+		remove-GC-output safe-to-string read/binary/seek worker/stdout worker/stdout-offset
 	]
 
 	; read-worker-output: function [worker [object!]] [
@@ -397,9 +406,14 @@ jobs: make any [value-of jobs  object!] [
 
 	; reset-system-words
 	init: does [
-		unless object? :config [config: object [command-to-test: none last-working-dir: none]]
-		unless attempt [config/command-to-test] [config: make config [command-to-test: "red --cli"]]
+		unless object? :config [config: object [command-to-test: compiler-to-test: last-working-dir: none]]
+		unless attempt [config/command-to-test]  [config: make config [command-to-test: "red --cli"]]
 		log-info #composite "Configured worker console is: (config/command-to-test)"
+		unless attempt [config/compiler-to-test] [config: make config [compiler-to-test: command-to-test]]
+		log-info #composite "Configured compiler is: (config/compiler-to-test)"
+		if find last split-path to-red-file config/compiler-to-test "console" [
+			log-warn #composite "Testing against a console. Compilation will be unavailable!^/Set `config/compiler-to-test` to a valid compiler executable to fix that."
+		]
 
 		main-worker: start-worker
 		quit-gracefully: q: does [
