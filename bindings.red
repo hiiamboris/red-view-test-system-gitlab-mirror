@@ -77,7 +77,8 @@ do-using: function [
 	code		[block!]
 	definitions	[block!]
 ][
-	fun: function [] compose [(definitions) do bind code :fun]		;@@ BUG: unfortunately, this binds 'local as well and traps return/exit
+	fun: function [] compose [(as paren! definitions) (code)]		;@@ BUG: unfortunately, this binds 'local as well and traps return/exit
+	; fun: function [] compose [(definitions) do bind code :fun]		;@@ BUG: unfortunately, this binds 'local as well and traps return/exit
 	fun
 ]
 
