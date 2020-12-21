@@ -213,7 +213,7 @@ once dope-ctx: context [
 		leaving: func [expr [block!]] [insert cleaners expr]	;-- `insert` to run them in the reverse the order
 		bind-only code: copy/deep code 'leaving
 		also guard/blame code code-2
-			do cleaners
+			guard cleaners						;-- `leaving` code should be guarded too, else it interrupts test logic
 	]
 
 
