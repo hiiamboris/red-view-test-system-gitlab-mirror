@@ -570,17 +570,24 @@ once toolset: context [
 		;; update the result
 		def/status: 'tested
 		msgs: rejoin ["" keep-type log-since mark string!]
-		foreach [marker word should-cond] [
+		foreach [marker word should-cond ok-msg] [
 			;; string  result  spelling of should not
-			"WARNING:" warning #[none]			;-- order here: from the small evil to greater
-			"ERROR:"   error   error
-			"CRASHED!" crash   crash
-			"BUSY!"    freeze  hang
+			"WARNING:" warning #[none] "OK. Didn't exceed warning limits" 			;-- order here: from the small evil to greater
+			"ERROR:"   error   error   "OK. Didn't error out"
+			"CRASHED!" crash   crash   "OK. Didn't crash"
+			"BUSY!"    freeze  hang    "OK. Didn't freeze"
 		][
 			if bad?: find/case msgs marker [result: word]
 			if find def/flags/should-not should-cond [		;-- condition affects the score
 												;@@ TODO: or get rid of `should not *` completely?
 				append def/score pick [1.0 0.0] not bad?
+				unless bad? [
+					scope [
+						current-key/push key
+						leaving [current-key/back]
+						log-info ok-msg			;-- otherwise I get jumpy every time I see *empty* log :D
+					]
+				]
 			]
 		]
 		default result: 'ok
@@ -753,7 +760,7 @@ once toolset: context [
 		]
 
 		write src-file code
-		cmd: #composite {red(flags) -o "(to-local-file exe-file)" "(to-local-file src-file)"}
+		cmd: #composite {(config/compiler-to-test)(flags) -o "(to-local-file exe-file)" "(to-local-file src-file)"}
 		job: compose [
 			pid: call/shell/wait/output (cmd) output: ""
 			print [pid lf output]						;-- let it show the results after
@@ -796,6 +803,7 @@ once toolset: context [
 		append exes r/handle
 		either wait [
 			stop-exe/max r/handle period		;-- return once it's down
+			remove/key running-exes key			;-- not 'running' anymore
 		][
 			system/words/wait 1.0		;-- delay until `view` kicks in ;@@ TODO: how to ensure Red script is read & running already?
 		]
