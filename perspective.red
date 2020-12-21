@@ -7,6 +7,8 @@ Red [
 ;@@ TODO: config-file with last known size/offset; reduced if maximized
 ;@@ TODO: unify comparison and exploration: should decide on the layout automatically
 ;@@ TODO: make includes never reinclude anything, but be able to do that with `reload` (reload %file ?)
+;@@ TODO: not just display OS, display it's version 
+;@@ TODO: it doesn't remove '?' sign after test is restarted
 
 do %include.red
 #include %common/assert.red					;@@ stupid `do` junk! - won't load macros
@@ -529,7 +531,12 @@ perspective-ctx: context [												;-- hide everything in a context from acci
 					return
 				]
 			]
-		] 'resize [text: #composite "(key) comparison"]
+		] 'resize [
+			text: #composite "(key) comparison"
+			actors: object [
+				on-key-up: func [fa ev] [if ev/key = #"^[" [unview/only fa]]	;-- make it ESC-closable
+			]
+		]
 	]
 
 	explore+compare: function [
@@ -601,7 +608,12 @@ perspective-ctx: context [												;-- hide everything in a context from acci
 					return
 				]
 			]
-		] 'resize [text: "objects comparison"]
+		] 'resize [
+			text: "objects comparison"
+			actors: object [
+				on-key-up: func [fa ev] [if ev/key = #"^[" [unview/only fa]]	;-- make it ESC-closable
+			]
+		]
 	]
 
 	explore+compare-images: function [
@@ -618,7 +630,7 @@ perspective-ctx: context [												;-- hide everything in a context from acci
 		]
 
 		diff: make image! i1'/size
-		xyloop xy diff/size [if i1'/:xy <> i2/:xy [diff/:xy: maroon]]	;@@ TODO: do this in R/S
+		xyloop xy diff/size [if i1'/:xy <> i2'/:xy [diff/:xy: maroon]]	;@@ TODO: do this in R/S
 		i1':   scale-to-fit i1   third
 		i2':   scale-to-fit i2   third
 		diff': scale-to-fit diff third
@@ -634,7 +646,12 @@ perspective-ctx: context [												;-- hide everything in a context from acci
 			image i1'   on-down [explore i1]  			;@@ TODO: should be on-up, but see #4384
 			image diff' on-down [explore diff]
 			image i2'   on-down [explore i2]
-		] 'resize [text: "images comparison"]
+		] 'resize [
+			text: "images comparison"
+			actors: object [
+				on-key-up: func [fa ev] [if ev/key = #"^[" [unview/only fa]]	;-- make it ESC-closable
+			]
+		]
 	]
 
 
