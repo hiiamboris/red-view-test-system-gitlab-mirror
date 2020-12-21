@@ -382,6 +382,9 @@ once visuals-ctx: context [
 
 
 	;@@ TODO: routine or RedCV? also this needs calibration (I only checked it on a few simple images)
+	;-- sensitive to both changes in overall brightness (1) and individual "outlier" pixels (2):
+	;-- 1) sum of normalized pixel differences (NPD), checked against `fuzz` * area
+	;-- 2) sum of squares of NPD *exceeding* given `fuzz`, checked against `fuzz` * area
 	visually-similar?: function [
 		"Loosely compare two images for equality"
 		im1 [image!]
@@ -391,16 +394,17 @@ once visuals-ctx: context [
 		; #assert [im1/size = im2/size]
 		unless im1/size = im2/size [ERROR "Images are expected to be of equal size, got (im1/size) and (im2/size)"]
 		default fuzz: 10%
-		if fuzz = 0% [fuzz: 0.01%]								;-- no zero division
-		im1: blur3x3 im1										;-- blur images to lessen the effect of image offsets due to possible rounding errors
+		if fuzz = 0% [fuzz: 0.01%]						;-- no zero division
+		im1: blur3x3 im1								;-- blur images to lessen the effect of image offsets due to possible rounding errors
 		im2: blur3x3 im2
 		sum1: 0.0 sum2: 0.0 sumcsq: 0.0
-		max-sumcsq: 1.0 * fuzz * im1/size/x * im1/size/y		;-- sum of squares of pixel contrasts, allowing each pixel to have up to fuzz=contrast
+		area: im1/size/x * im1/size/y
+		max-sumcsq: 1.0 * fuzz * area					;-- sum of squares of pixel contrasts, allowing each pixel to have up to fuzz=contrast
 		repeat i length? im1 [
 			px1: im1/:i  px2: im2/:i
 			sum1: sum1 + px1/1 + px1/2 + px1/3
 			sum2: sum2 + px2/1 + px2/2 + px2/3
-			c: (contrast px1 px2) / fuzz						;-- using custom 'contrast' definition sensitive to c >> fuzz
+			c: (contrast px1 px2) / fuzz				;-- using custom 'contrast' definition sensitive to c >> fuzz
 			sumcsq: c * c + sumcsq
 			if sumcsq > max-sumcsq [
 				; ? sumcsq ? max-sumcsq 
@@ -408,7 +412,8 @@ once visuals-ctx: context [
 			]
 		]
 		; ? sumcsq ? max-sumcsq 
-		dif: (abs sum2 - sum1) / max sum1 sum2					;-- relative difference in overall brightness
+		sum-white: area * 3 * 255.0						;-- 3 for R,G,B, 255 for max brightness
+		dif: (abs sum2 - sum1) / sum-white				;-- relative difference in overall brightness
 		; ? dif
 		dif <= fuzz
 	]
@@ -471,12 +476,22 @@ once visuals-ctx: context [
 							]
 							return
 						]
-					] 'resize [text: #composite "Artifact (any [attempt [o/key] txt])"]
+					] 'resize [
+						text: #composite "Artifact (any [attempt [o/key] txt])"
+						actors: object [
+							on-key-up: func [fa ev] [if ev/key = #"^[" [unview/only fa]]	;-- make it ESC-closable
+						]
+					]
 				]
 				block? b: :v [
 					view/flags/options elastic compose [
 						area 300x200 #scale (mold/part :v 100000)
-					] 'resize [text: #composite {Block "(txt)"}]
+					] 'resize [
+						text: #composite {Block "(txt)"}
+						actors: object [
+							on-key-up: func [fa ev] [if ev/key = #"^[" [unview/only fa]]	;-- make it ESC-closable
+						]
+					]
 				]
 				image? i: (v) [			;-- evaluates if it's a function - by design!
 					explore/title i #composite {Image "(any [txt i/size])"}
